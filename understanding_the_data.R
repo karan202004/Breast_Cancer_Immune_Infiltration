@@ -1,14 +1,11 @@
 library(TCGAbiolinks)
 
-# Your original tumor query results
-# (tumor_query_results should already exist)
-
-# Check the available sample types
+#check the available sample types
 table(tumor_query_results$sample_type)
-# See all sample types
+#see all sample types
 unique(tumor_query_results$sample_type)
 
-# Count each sample type
+#count each sample type
 sample_type_counts <- as.data.frame(
   table(tumor_query_results$sample_type)
 )
@@ -32,13 +29,13 @@ setdiff(
 table(tumor_query_results$sample_type)
 
 
-# Find samples that have multiple files
+#find samples that have multiple files
 duplicate_samples <- tumor_query_results[
   duplicated(tumor_query_results$sample.submitter_id) |
     duplicated(tumor_query_results$sample.submitter_id, fromLast = TRUE),
 ]
 
-# Show the duplicate samples
+#find the duplicate samples
 duplicate_samples[, c(
   "sample.submitter_id",
   "id",
@@ -46,16 +43,16 @@ duplicate_samples[, c(
   "file_size",
   "md5sum"
 )]
-# Count how many files each sample has
+#Count how many files each sample has
 duplicate_counts <- table(tumor_query_results$sample.submitter_id)
 
 duplicate_counts[duplicate_counts > 1]
 
-# Compare total file records with unique samples
+#Compare total file records with unique samples
 nrow(tumor_query_results)
 length(unique(tumor_query_results$sample.submitter_id))
 
-# Look at the important columns
+#important columns
 names(tumor_query_results)
 
 # Show how many records exist for each sample.submitter_id
@@ -66,7 +63,7 @@ head(
   ),
   20
 )
-# Look at all file-level identifiers
+#Look at all file-level identifiers
 tumor_query_results[, c(
   "id",
   "sample.submitter_id",
@@ -75,19 +72,9 @@ tumor_query_results[, c(
   "md5sum"
 )][1:20, ]
 
-library(TCGAbiolinks)
-
-# ============================================================
-# 1. Main directories
-# ============================================================
-
 project_dir <- "C:/Users/karan/OneDrive/Documents/Breast_Cancer_Immune_Infiltration"
 
 data_dir <- file.path(project_dir, "data")
-
-# ============================================================
-# 2. List all downloaded STAR-Counts files
-# ============================================================
 
 all_tsv_files <- list.files(
   data_dir,
@@ -225,10 +212,10 @@ extra_sample_info <- lapply(
     
     result <- fromJSON(url)$data
     
-    # Extract case
+    #extract case
     case <- result$cases[[1]]
     
-    # Extract sample
+    #Extract sample
     sample <- case$samples[[1]]
     
     data.frame(
@@ -278,9 +265,8 @@ extra_file_info <- do.call(
 )
 
 extra_file_info
-# ============================================================
-# CREATE CLEAN DATA DIRECTORY
-# ============================================================
+
+# Create clean data directory
 
 clean_dir <- file.path(
   data_dir,
@@ -291,9 +277,6 @@ dir.create(
   clean_dir,
   showWarnings = FALSE
 )
-# ============================================================
-# CREATE FILE-ID → DOWNLOADED FILE MAPPING
-# ============================================================
 
 downloaded_map <- data.frame(
   file_id = all_downloaded_ids,
@@ -302,9 +285,6 @@ downloaded_map <- data.frame(
 )
 
 head(downloaded_map)
-# ============================================================
-# KEEP ONLY EXPECTED 1106 FILES
-# ============================================================
 
 expected_files <- downloaded_map[
   downloaded_map$file_id %in% tumor_query_results$id,
@@ -312,9 +292,6 @@ expected_files <- downloaded_map[
 
 nrow(expected_files)
 length(unique(expected_files$file_id))
-# ============================================================
-# ADD SAMPLE INFORMATION
-# ============================================================
 
 clean_metadata <- tumor_query_results[
   match(
@@ -327,11 +304,8 @@ nrow(clean_metadata)
 table(clean_metadata$sample_type)
 length(unique(clean_metadata$sample.submitter_id))
 
-library(TCGAbiolinks)
-library(jsonlite)
-# ============================================================
-# SAVE CLEAN METADATA FOR THE 1106 PRIMARY TUMOR SAMPLES
-# ============================================================
+
+# save clean metadata
 
 clean_metadata <- data.frame(
   sample_id = clean_metadata$sample.submitter_id,
@@ -342,7 +316,6 @@ clean_metadata <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Check
 head(clean_metadata)
 
 dim(clean_metadata)
@@ -370,10 +343,6 @@ write.csv(
 
 metadata_file
 
-# ============================================================
-# TEST ONE STAR-COUNTS FILE
-# ============================================================
-
 test_file <- clean_metadata$file_path[1]
 
 test_lines <- readLines(test_file, n = 10)
@@ -393,18 +362,14 @@ head(test_counts)
 colnames(test_counts)
 nrow(test_counts)
 
-# ============================================================
-# TEST GENE EXTRACTION FROM ONE STAR-COUNTS FILE
-# ============================================================
-
 test_gene_data <- test_counts[
   !grepl("^N_", test_counts$gene_id),
 ]
 
-# Check dimensions
+#Check dimensions
 dim(test_gene_data)
 
-# Check first genes
+#Check first genes
 head(
   test_gene_data[, c(
     "gene_id",
@@ -414,25 +379,21 @@ head(
   )]
 )
 
-# Check number of unique genes
+#Check number of unique genes
 length(unique(test_gene_data$gene_id))
 
-# Check missing gene names
+#Check missing gene names
 sum(
   is.na(test_gene_data$gene_name) |
     test_gene_data$gene_name == ""
 )
 
-# Check duplicate gene IDs
+#Check duplicate gene IDs
 sum(duplicated(test_gene_data$gene_id))
 
-# Check gene types
+#check gene types
 table(test_gene_data$gene_type)
 
-
-# ============================================================
-# SAFE CLEANUP & STRICT AUDIT OF GDC DATA DIRECTORY
-# ============================================================
 
 library(dplyr)
 
@@ -440,16 +401,12 @@ project_dir <- "C:/Users/karan/OneDrive/Documents/Breast_Cancer_Immune_Infiltrat
 metadata_path <- file.path(project_dir, "metadata", "primary_tumor_1106_metadata.csv")
 data_dir <- file.path(project_dir, "data")
 
-# 1. Load authoritative clean manifest (1,106 samples)
 clean_metadata <- read.csv(metadata_path, stringsAsFactors = FALSE)
 valid_file_ids <- clean_metadata$file_id
 
-cat("============================================================\n")
-cat("PRE-CLEANUP AUDIT\n")
-cat("============================================================\n")
 cat("Target manifest sample count (authoritative):", length(valid_file_ids), "\n")
 
-# 2. Identify all downloaded TSV files on disk
+#Identify all downloaded TSV files
 all_tsv_files <- list.files(
   path = data_dir, 
   pattern = "\\.rna_seq\\.augmented_star_gene_counts\\.tsv$", 
@@ -457,12 +414,10 @@ all_tsv_files <- list.files(
   full.names = TRUE
 )
 
-# Extract parent folder UUIDs (file_ids) from file paths
 disk_file_ids <- basename(dirname(all_tsv_files))
 
 cat("Total TSV files on disk before cleanup:      ", length(all_tsv_files), "\n")
 
-# Check for duplicate file IDs on disk
 duplicate_disk_ids <- unique(disk_file_ids[duplicated(disk_file_ids)])
 cat("Duplicate file IDs on disk:                 ", length(duplicate_disk_ids), "\n")
 
@@ -471,7 +426,7 @@ if (length(duplicate_disk_ids) > 0) {
   print(duplicate_disk_ids)
 }
 
-# 3. Derive extra file IDs by set difference
+#Derive extra file IDs by set difference
 extra_file_ids <- setdiff(disk_file_ids, valid_file_ids)
 cat("Extra file IDs identified for removal:       ", length(extra_file_ids), "\n")
 
@@ -493,10 +448,6 @@ if (length(extra_file_ids) > 0) {
   cat("\nNo extra files found to delete.\n")
 }
 
-# ============================================================
-# POST-CLEANUP STRICT RE-AUDIT
-# ============================================================
-
 remaining_tsv_files <- list.files(
   path = data_dir, 
   pattern = "\\.rna_seq\\.augmented_star_gene_counts\\.tsv$", 
@@ -506,15 +457,11 @@ remaining_tsv_files <- list.files(
 
 remaining_file_ids <- basename(dirname(remaining_tsv_files))
 
-cat("\n============================================================\n")
-cat("POST-CLEANUP VERIFICATION\n")
-cat("============================================================\n")
-cat("Target manifest files (expected): ", length(valid_file_ids), "\n")
-cat("Downloaded TSV files remaining:   ", length(remaining_tsv_files), "\n")
-cat("Unique file IDs on disk:         ", length(unique(remaining_file_ids)), "\n")
-cat("Missing expected files:           ", length(setdiff(valid_file_ids, remaining_file_ids)), "\n")
-cat("Extra unmapped files:             ", length(setdiff(remaining_file_ids, valid_file_ids)), "\n")
-cat("============================================================\n")
+cat("target manifest files (expected): ", length(valid_file_ids), "\n")
+cat("downloaded TSV files remaining:   ", length(remaining_tsv_files), "\n")
+cat("unique file IDs on disk:         ", length(unique(remaining_file_ids)), "\n")
+cat("missing expected files:           ", length(setdiff(valid_file_ids, remaining_file_ids)), "\n")
+cat("extra unmapped files:             ", length(setdiff(remaining_file_ids, valid_file_ids)), "\n")
 
 if (
   length(remaining_tsv_files) == 1106 &&
@@ -522,7 +469,7 @@ if (
   length(setdiff(valid_file_ids, remaining_file_ids)) == 0 &&
   length(setdiff(remaining_file_ids, valid_file_ids)) == 0
 ) {
-  cat("\nSUCCESS: Data directory is 100% clean and matches clean_metadata exactly!\n")
+  cat("\n data directory is clean and matches clean_metadata exactly!\n")
 } else {
-  cat("\nWARNING: File count mismatch remaining. Re-examine audit log.\n")
+  cat("\n file count mismatch remaining. re-examine audit log.\n")
 }
