@@ -75,16 +75,16 @@ GDCquery(
     "4b96ee43-874c-4fa6-b5ce-08caf37ef2e1"
   )
 )
-# 1. Deduplicate by sample ID
+#Deduplicate by sample ID
 tumor_unique <- tumor_results[!duplicated(tumor_results$sample.submitter_id), ]
 
-# 2. Check total unique sample count
+#Check total unique sample count
 nrow(tumor_unique)
 
-# 3. Check total unique patient count
+#Check total unique patient count
 length(unique(tumor_unique$cases.submitter_id))
 
-# 4. Check frequency distribution of samples per patient
+#Check frequency distribution of samples per patient
 table(table(tumor_unique$cases.submitter_id))
 
 tumor_unique[
@@ -183,8 +183,7 @@ length(tsv_files)
 head(basename(tsv_files), 10)
 readLines(tsv_files[1], n = 10)
 
-library(TCGAbiolinks)
-packageVersion("TCGAbiolinks")
+
 batch2_barcodes <- tumor_query_results$sample.submitter_id[101:200]
 
 length(batch2_barcodes)
@@ -209,15 +208,15 @@ list.files(data_dir)
 data_dir <- "C:/Users/karan/OneDrive/Documents/Breast_Cancer_Immune_Infiltration/data"
 batch1_dir <- file.path(data_dir, "Batch1")
 
-# Read Batch 1 file IDs
+#Read Batch 1 file IDs
 batch1_ids <- readLines(
   "C:/Users/karan/OneDrive/Documents/Breast_Cancer_Immune_Infiltration/batch1_file_ids.txt"
 )
 
-# Remove empty lines
+#Remove empty lines
 batch1_ids <- batch1_ids[nzchar(batch1_ids)]
 
-# Move Batch 1 folders
+#Move Batch 1 folders
 for (id in batch1_ids) {
   source <- file.path(data_dir, id)
   destination <- file.path(batch1_dir, id)
@@ -555,8 +554,6 @@ length(list.files(
 ))
 
 
-library(TCGAbiolinks)
-packageVersion("TCGAbiolinks")
 batch10_barcodes <- tumor_query_results$sample.submitter_id[901:1000]
 
 length(batch10_barcodes)
