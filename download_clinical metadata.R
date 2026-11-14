@@ -1,8 +1,4 @@
-# ============================================================
-# PHASE 4 PREP: DOWNLOAD CLINICAL + PAM50 DATA FOR 1,106 SAMPLES
-# TCGA-BRCA | uses TCGAbiolinks (already installed)
-# Output: metadata/clinical_phase4_1106.csv (+ .rds)
-# ============================================================
+#Download clinical + PAM50 data for 1,106 samples
 
 suppressPackageStartupMessages(library(TCGAbiolinks))
 
@@ -11,7 +7,7 @@ meta_dir    <- file.path(project_dir, "metadata")
 raw_dir     <- file.path(meta_dir, "raw_clinical")
 dir.create(raw_dir, recursive = TRUE, showWarnings = FALSE)
 
-## 1. The 1,106 samples ----------------------------------------
+
 samples <- read.csv(file.path(meta_dir, "primary_tumor_1106_metadata.csv"),
                     stringsAsFactors = FALSE)
 if (nrow(samples) != 1106 || anyDuplicated(samples$sample_id))
@@ -26,7 +22,6 @@ multi <- unique(samples$patient[duplicated(samples$patient)])
 cat("Samples:", nrow(samples), "| unique patients:", n_pat,
     "| patients with >1 primary tumour sample:", length(multi), "\n\n")
 
-## Helper: take the first matching column, record which one was used
 sources <- list()
 pick <- function(df, field, exact, pattern = NULL) {
   hit <- intersect(exact, names(df))
@@ -40,7 +35,7 @@ pick <- function(df, field, exact, pattern = NULL) {
   df[[hit[1]]]
 }
 
-## 2. Clinical data from GDC -----------------------------------
+#Clinical data from GDC
 cat("Downloading GDC clinical data...\n")
 clin_raw <- GDCquery_clinic(project = "TCGA-BRCA", type = "clinical")
 saveRDS(clin_raw, file.path(raw_dir, "gdc_clinical_raw.rds"))
@@ -69,7 +64,7 @@ if (anyDuplicated(clin$patient)) {
   clin <- clin[!duplicated(clin$patient), ]
 }
 
-# Derived variables
+#Derived variables
 num <- function(x) suppressWarnings(as.numeric(as.character(x)))
 clin$age <- num(clin$age_at_index)
 fill_age <- is.na(clin$age) & !is.na(num(clin$age_at_diag_days))
@@ -84,7 +79,7 @@ dead <- tolower(clin$vital_status) == "dead"
 clin$os_event <- ifelse(is.na(clin$vital_status), NA, as.integer(dead))
 clin$os_days  <- ifelse(dead, num(clin$days_to_death), num(clin$days_to_last_fu))
 
-## 3. PAM50 subtype --------------------------------------------
+##PAM50 subtype
 cat("\nDownloading PAM50 subtypes...\n")
 pam <- NULL
 sub_raw <- tryCatch(TCGAquery_subtype(tumor = "brca"), error = function(e) NULL)
@@ -116,7 +111,7 @@ pam$pam50 <- ifelse(pam$pam50_raw %in% names(lab), lab[pam$pam50_raw], NA)
 odd <- setdiff(unique(pam$pam50_raw[is.na(pam$pam50)]), c(NA, "", "NA"))
 if (length(odd)) cat("PAM50 labels set to NA (unrecognised):", paste(odd, collapse = ", "), "\n")
 
-## 4. Merge onto the 1,106 samples (metadata order) ------------
+##Merge onto the 1,106 samples (metadata order)
 out <- merge(samples[, c("sample_id", "patient")], clin, by = "patient", all.x = TRUE, sort = FALSE)
 out <- merge(out, pam[, c("patient", "pam50")], by = "patient", all.x = TRUE, sort = FALSE)
 out <- out[match(samples$sample_id, out$sample_id), ]
@@ -134,8 +129,6 @@ rownames(out) <- NULL
 write.csv(out, file.path(meta_dir, "clinical_phase4_1106.csv"), row.names = FALSE)
 saveRDS(out, file.path(meta_dir, "clinical_phase4_1106.rds"))
 
-## 5. Report ---------------------------------------------------
-cat("\n================ CLINICAL METADATA SUMMARY ================\n")
 cat("Source columns used:\n")
 print(data.frame(field = names(sources), column = unlist(sources)), row.names = FALSE)
 
