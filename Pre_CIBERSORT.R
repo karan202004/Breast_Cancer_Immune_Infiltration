@@ -1,7 +1,4 @@
-
-# ==============================================================================
-# CIBERSORT - Step 3: Prepare and validate input files
-# ==============================================================================
+#Prepare and validate input files for CIBERSORT
 
 project_dir <- file.path(
   "C:/Users/karan/OneDrive/Documents",
@@ -31,7 +28,7 @@ stopifnot(
   file.exists(meta_file)
 )
 
-# Load expression matrix and metadata
+#Load expression matrix and metadata
 tpm_mat <- as.matrix(readRDS(input_file))
 metadata <- read.csv(meta_file, stringsAsFactors = FALSE)
 
@@ -47,11 +44,11 @@ stopifnot(
   setequal(colnames(tpm_mat), metadata$sample_id)
 )
 
-# Match metadata sample order
+#Match metadata sample order
 tpm_mat <- tpm_mat[, metadata$sample_id, drop = FALSE]
 stopifnot(identical(colnames(tpm_mat), metadata$sample_id))
 
-# Read LM22 and inspect the gene overlap
+#Read LM22 and inspect the gene overlap
 lm22 <- read.delim(
   sig_file,
   header = TRUE,
@@ -80,7 +77,7 @@ cat("LM22 signature:", nrow(lm22), "genes x",
     ncol(lm22), "cell types\n")
 cat("Shared genes:", length(shared_genes), "\n")
 
-# Save mixture in CIBERSORT's required tab-delimited format
+#Save mixture in CIBERSORT's required tab-delimited format
 write.table(
   data.frame(GeneSymbol = rownames(tpm_mat), tpm_mat,
              check.names = FALSE),
