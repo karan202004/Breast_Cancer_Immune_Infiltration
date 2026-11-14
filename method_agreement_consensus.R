@@ -1,10 +1,3 @@
-# ============================================================
-# STEP 5: METHOD AGREEMENT + CONSENSUS IMMUNE FEATURES
-# TCGA-BRCA | 1,106 primary tumour samples
-# Input: aligned score files from the QC step (same sample order)
-# ============================================================
-
-## 0. Paths and packages ---------------------------------------
 project_dir <- "C:/Users/karan/OneDrive/Documents/Breast_Cancer_Immune_Infiltration"
 input_dir   <- file.path(project_dir, "results", "deconvolution_QC")
 output_dir  <- file.path(project_dir, "results", "method_comparison_consensus")
@@ -12,13 +5,11 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 if (!requireNamespace("pheatmap", quietly = TRUE)) install.packages("pheatmap")
 
-# Settings you may want to adjust
 primary_methods   <- c("quantiseq", "EPIC", "MCPcounter", "xCell")  # consensus methods
 min_methods       <- 3     # consensus needs at least this many primary methods
 min_median_rho    <- 0.4   # ...and at least this median pairwise Spearman rho
 cib_p_cutoff      <- 0.05  # CIBERSORT sensitivity subset
 
-## 1. Load aligned scores --------------------------------------
 method_files <- c(
   quantiseq  = "aligned_quantiseq_scores.rds",
   EPIC       = "aligned_EPIC_scores.rds",
@@ -42,7 +33,6 @@ for (m in names(method_files)) {
   scores[[m]] <- mat
 }
 
-# The QC step already aligned everything; confirm rather than intersect
 ref_ids <- rownames(scores[[1]])
 for (m in names(scores)) {
   if (!identical(rownames(scores[[m]]), ref_ids))
@@ -60,7 +50,7 @@ if (file.exists(cib_diag_path)) {
     cib_sig <- cd[["P-value"]] < cib_p_cutoff
 }
 
-# Record every available column so the mapping can be checked
+#Record every available column
 available <- do.call(rbind, lapply(names(scores), function(m)
   data.frame(method = m, column = colnames(scores[[m]]), stringsAsFactors = FALSE)))
 write.csv(available, file.path(output_dir, "00_available_columns.csv"), row.names = FALSE)
@@ -68,13 +58,7 @@ write.csv(available, file.path(output_dir, "00_available_columns.csv"), row.name
 cat("Columns available per method:\n")
 for (m in names(scores)) cat("\n", m, ":\n  ", paste(colnames(scores[[m]]), collapse = " | "), "\n")
 
-## 2. Cell-type mapping ----------------------------------------
-# Each method maps to a list of COMPONENTS. Components are summed
-# (e.g. CIBERSORT naive + memory B cells). Each component lists
-# alternative spellings; the first one present is used.
-# Names cover immunedeconv's standard labels and original-tool labels.
-# Approximate matches are labelled so they can be interpreted carefully.
-
+#Cell-type mapping
 map <- list(
   CD8_T_cells = list(
     quantiseq  = list(c("T cell CD8+", "T.cells.CD8", "T cells CD8")),
@@ -165,7 +149,7 @@ resolve <- function(method, comps) {
   list(ok = TRUE, v = rowSums(scores[[method]][, used, drop = FALSE]), used = used)
 }
 
-## 3. Resolve the mapping (and report every miss) ---------------
+#Resolve the mapping
 feat_vec <- list()
 mapping  <- list()
 
@@ -200,7 +184,7 @@ if (nrow(not_found)) {
   print(not_found, row.names = FALSE)
 }
 
-## 4. Pairwise Spearman agreement -------------------------------
+##Pairwise Spearman agreement
 pairs_out <- list()
 for (f in names(feat_vec)) {
   ms <- names(feat_vec[[f]])
@@ -226,7 +210,7 @@ for (f in names(feat_vec)) {
 pairs_df <- if (length(pairs_out)) do.call(rbind, pairs_out) else data.frame()
 write.csv(pairs_df, file.path(output_dir, "02_pairwise_method_correlations.csv"), row.names = FALSE)
 
-## 5. Heatmaps (one per population) -----------------------------
+##Heatmaps (one per population)
 for (f in unique(pairs_df$feature)) {
   tmp <- pairs_df[pairs_df$feature == f, ]
   ms  <- unique(c(tmp$method_1, tmp$method_2))
@@ -246,7 +230,7 @@ for (f in unique(pairs_df$feature)) {
     width = 5.5, height = 4.5)
 }
 
-## 6. Agreement overview per population --------------------------
+##Agreement overview per population
 overview <- do.call(rbind, lapply(unique(pairs_df$feature), function(f) {
   tmp  <- pairs_df[pairs_df$feature == f, ]
   prim <- tmp[tmp$method_1 %in% primary_methods & tmp$method_2 %in% primary_methods, ]
@@ -262,11 +246,6 @@ overview <- do.call(rbind, lapply(unique(pairs_df$feature), function(f) {
 }))
 write.csv(overview, file.path(output_dir, "04_method_agreement_overview.csv"), row.names = FALSE)
 
-## 7. Consensus features ----------------------------------------
-# CIBERSORT is excluded because its values are proportions WITHIN the
-# immune compartment, a different quantity from the other methods.
-# Scores are rank-based inverse-normal transformed within each method
-# (robust to zero inflation and skew), then averaged.
 int_transform <- function(v) qnorm((rank(v, ties.method = "average") - 0.5) / length(v))
 
 consensus <- list()
@@ -304,10 +283,6 @@ if (length(consensus)) {
   saveRDS(cons_df, file.path(output_dir, "06_consensus_immune_features.rds"))
 }
 
-## 8. Report ----------------------------------------------------
-cat("\n============================================================\n")
-cat("METHOD AGREEMENT + CONSENSUS\n")
-cat("============================================================\n")
 cat("Samples:", n_samples, "\n")
 cat("CIBERSORT sensitivity subset (P <", cib_p_cutoff, "):",
     if (is.null(cib_sig)) "not available" else sum(cib_sig), "\n\n")
