@@ -4,7 +4,7 @@ primary_methods <- c("quantiseq", "EPIC", "MCPcounter", "xCell")
 min_methods     <- 3
 min_median_rho  <- 0.4
 
-# Population-specific exclusions, each with a documented reason
+#Population-specific exclusions, each with a documented reason
 consensus_exclude <- list(
   CD8_T_cells = c(EPIC = "negative correlation with all other methods (rho -0.08 to -0.23) and with CD8A/CD8B expression (rho -0.23)")
 )
