@@ -1,24 +1,4 @@
-# ============================================================
-# CLINICAL AND MOLECULAR DATA + ANALYSIS SET
-# TCGA-BRCA | 1,106 primary tumour RNA-seq samples
-#
-# Run order:  1. clinical_data_and_analysis_set.R   (this script)
-#             2. phase4_immune_landscape.R
-#             3. clinical_master_table_qc.R
-#
-# Replaces phase4_get_clinical_metadata.R, the sex_at_birth fix and the
-# clinical part of clinical_data_matching_qc.R.
-#
-# Data sources:
-#   - GDC clinical (TCGAbiolinks::GDCquery_clinic)
-#   - PAM50: Berger et al. Cancer Cell 2018;33:690-705 (TCGAbiolinks::TCGAquery_subtype)
-#   - GDC BCR Biotab clinical supplement: ER, PR, HER2, menopause
-#   - TCGA-CDR, Liu et al. Cell 2018;173:400-416: curated survival endpoints
-#   - PanCanAtlas (Thorsson et al. Immunity 2018;48:812-830): leukocyte fraction
-#     (DNA methylation), ABSOLUTE purity, merged sample quality annotations
-#
-# Downloads are skipped when the file already exists in metadata/raw_clinical.
-# ============================================================
+# Clinical data analysis
 
 suppressPackageStartupMessages(library(TCGAbiolinks))
 if (!requireNamespace("readxl", quietly = TRUE)) install.packages("readxl")
@@ -31,7 +11,6 @@ out_dir  <- file.path(project_dir, "results", "clinical_integration")
 dir.create(raw_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-## Helpers -------------------------------------------------------
 checks <- list()
 log_check <- function(link, check, result, status, detail = "") {
   checks[[length(checks) + 1]] <<- data.frame(
@@ -40,7 +19,7 @@ log_check <- function(link, check, result, status, detail = "") {
 }
 pass_fail <- function(ok) if (isTRUE(ok)) "PASS" else "FAIL"
 
-# TCGA uses bracketed codes for missing values
+#TCGA uses bracketed codes for missing values
 clean_na <- function(x) {
   x <- trimws(as.character(x))
   x[x %in% c("", "NA", "--", "'--", "[Not Available]", "[Not Applicable]",
@@ -70,13 +49,12 @@ get_file <- function(url, dest) {
   dest
 }
 
-## 1. SAMPLES ====================================================
 samples <- read.csv(file.path(meta_dir, "primary_tumor_1106_metadata.csv"), stringsAsFactors = FALSE)
 ids <- as.character(samples$sample_id)
 samples$patient  <- substr(ids, 1, 12)
 samples$sample15 <- substr(ids, 1, 15)          # TCGA-XX-XXXX-01, used to match other platforms
 
-# TCGA barcode: TCGA-<site>-<participant>-<sample type 01 = primary tumour><vial>
+#TCGA barcode: TCGA-<site>-<participant>-<sample type 01 = primary tumour><vial>
 bc_ok <- grepl("^TCGA-[A-Z0-9]{2}-[A-Z0-9]{4}-01[A-Z]$", ids)
 log_check("Sample", "Barcode format is a primary tumour (TCGA-XX-XXXX-01X)",
           sprintf("%d / %d", sum(bc_ok), length(ids)), pass_fail(all(bc_ok)),
@@ -96,7 +74,7 @@ log_check("Sample", "Patients with more than one primary tumour sample", length(
           "Only the first sample per patient enters the analysis set")
 n_pat <- length(unique(samples$patient))
 
-## 2. GDC CLINICAL ===============================================
+#GDC CLINICAL
 gdc_file <- file.path(raw_dir, "gdc_clinical_raw.rds")
 if (!file.exists(gdc_file)) saveRDS(GDCquery_clinic(project = "TCGA-BRCA", type = "clinical"), gdc_file)
 gdc <- readRDS(gdc_file)
@@ -128,7 +106,7 @@ stage <- factor(ifelse(grepl("^STAGE (IV|III|II|I)", st), sub("^STAGE (IV|III|II
                 levels = c("I", "II", "III", "IV"))
 ajcc_edition <- clean_na(g("ajcc_staging_system_edition", c("ajcc_staging_system_edition"), "staging_system_edition"))
 
-# TNM: keep the main category only (T1c -> T1, N1a -> N1); TX/NX/MX -> missing
+#TNM: keep the main category only (T1c -> T1, N1a -> N1); TX/NX/MX -> missing
 tnm_main <- function(x, letter) {
   x <- toupper(clean_na(x)); x <- sub("^[CP]", "", x)
   ifelse(grepl(paste0("^", letter, "[0-4]"), x), substr(x, 1, 2), NA)
@@ -149,7 +127,7 @@ log_check("Clinical", "Histologic grade available", sprintf("%d samples with a v
           if (grade_n > 0) "INFO" else "FLAG",
           if (length(grade_cols)) paste("Columns checked:", paste(grade_cols, collapse = ", ")) else "No grade column")
 
-## 3. PAM50 ======================================================
+#PAM50
 pam <- NULL
 sub_file <- file.path(raw_dir, "tcga_brca_subtype_raw.rds")
 if (!file.exists(sub_file)) {
@@ -174,7 +152,7 @@ pam50 <- factor(unname(pam_lab[pam$pam50_raw[match(samples$patient, pam$patient)
 log_check("Clinical <-> Sample", "Samples with a PAM50 subtype",
           sprintf("%d / %d", sum(!is.na(pam50)), length(ids)), "INFO")
 
-## 4. BIOTAB: RECEPTOR STATUS AND MENOPAUSE ======================
+#Biotab
 biotab_rds <- file.path(raw_dir, "gdc_biotab_clinical_raw.rds")
 if (!file.exists(biotab_rds)) {
   q <- GDCquery(project = "TCGA-BRCA", data.category = "Clinical",
@@ -198,13 +176,12 @@ her2_fish <- clean_na(pick(pt, "HER2 status (FISH)", "her2_fish_status"))[bi]
 menopause <- clean_na(pick(pt, "Menopause status", "menopause_status", "menopause"))[bi]
 # No positive-lymph-node count exists in the Biotab file (only nodes examined); nodal status uses pN.
 
-# ER/PR: recorded IHC status. Positive = >=1% staining under ASCO/CAP guidance
-# (Allison et al. J Clin Oncol 2020;38:1346-1366).
+#ER/PR: recorded IHC status. Positive = >=1% staining under ASCO/CAP guidance
 binary_status <- function(x) ifelse(x %in% c("Positive", "Negative"), x, NA)
 er_status <- binary_status(er_raw)
 pr_status <- binary_status(pr_raw)
 
-# HER2: ASCO/CAP logic (Wolff et al. J Clin Oncol 2018;36:2105-2122):
+#HER2: ASCO/CAP logic (Wolff et al. J Clin Oncol 2018;36:2105-2122):
 # IHC positive or ISH positive -> positive; IHC or ISH negative -> negative;
 # IHC equivocal with no ISH result -> unknown.
 her2_pos <- her2_ihc %in% "Positive" | her2_fish %in% "Positive"
@@ -213,7 +190,7 @@ her2_status <- ifelse(her2_pos, "Positive", ifelse(her2_neg, "Negative", NA))
 
 hr_status <- ifelse(er_status %in% "Positive" | pr_status %in% "Positive", "Positive",
                     ifelse(er_status %in% "Negative" & pr_status %in% "Negative", "Negative", NA))
-# Joint HR/HER2 groups (Howlader et al. JNCI 2014;106:dju055)
+#Joint HR/HER2 groups (Howlader et al. JNCI 2014;106:dju055)
 make_receptor_subtype <- function(hr, her2) {
   x <- ifelse(is.na(hr) | is.na(her2), NA,
               ifelse(hr == "Positive" & her2 == "Negative", "HR+/HER2-",
@@ -227,7 +204,7 @@ menopause_status <- ifelse(is.na(menopause), NA,
                            ifelse(grepl("^Pre|^Peri", menopause), "Pre/peri-menopausal",
                                   ifelse(grepl("^Post", menopause), "Post-menopausal", NA)))
 
-## 5. TCGA-CDR SURVIVAL (Liu et al. 2018) ========================
+#TCGA-CDR Survival
 cdr_file <- get_file("https://api.gdc.cancer.gov/data/1b5f413e-a8d1-4d10-92eb-7c4ae739ed81",
                      file.path(raw_dir, "TCGA_CDR_SupplementalTableS1.xlsx"))
 endpoint_cols <- c("OS", "OS.time", "DSS", "DSS.time", "DFI", "DFI.time", "PFI", "PFI.time")
@@ -254,7 +231,7 @@ if (!is.null(cdr_file)) {
             "Download TCGA-CDR-SupplementalTableS1.xlsx manually into metadata/raw_clinical and rerun")
 }
 
-# Cross-source consistency
+#Cross-source consistency
 age_diff <- abs(age - cdr_age)
 log_check("Clinical sources", "Age: GDC vs TCGA-CDR (differ by >1 year)",
           sum(age_diff > 1, na.rm = TRUE), if (sum(age_diff > 1, na.rm = TRUE) == 0) "PASS" else "FLAG")
@@ -269,7 +246,7 @@ log_check("Clinical", "AJCC staging editions used",
           paste(names(ed_tab), ed_tab, sep = ": ", collapse = "; "), "INFO",
           "TCGA cases span several AJCC editions; stage groups are used as recorded")
 
-## 6. PANCANATLAS MOLECULAR DATA =================================
+#Pancanatlas molecular data
 match15 <- function(df_ids, values) {
   key <- substr(df_ids, 1, 15)
   agg <- tapply(values, key, function(v) mean(v, na.rm = TRUE))
@@ -304,12 +281,12 @@ if (!is.null(abs_file)) {
             sprintf("%d / %d", sum(!is.na(pur_val)), length(ids)), "INFO")
 }
 
-## 7. QUALITY-ANNOTATION EXCLUSIONS ==============================
+#Quality-annotation exclusions
 # Rule (decided after reviewing every flag):
-#  - patient-level TCGA notifications (prior systemic treatment, neoadjuvant therapy,
-#    not invasive) apply to the patient on every platform -> exclude all their samples;
-#  - Do_not_use on the mRNA-seq aliquot of the exact sample we use -> exclude that sample;
-#  - Do_not_use on other platforms only (SNP array, methylation, miRNA, RPPA) -> not relevant.
+# patient-level TCGA notifications (prior systemic treatment, neoadjuvant therapy,
+# not invasive) apply to the patient on every platform -> exclude all their samples;
+# Do_not_use on the mRNA-seq aliquot of the exact sample we use -> exclude that sample;
+# Do_not_use on other platforms only (SNP array, methylation, miRNA, RPPA) -> not relevant.
 excl_reason <- rep(NA_character_, length(ids))
 qa_file <- get_file("https://api.gdc.cancer.gov/data/1a7d7be8-675d-4e60-a105-19d4121bdebf",
                     file.path(raw_dir, "PanCanAtlas_merged_sample_quality_annotations.tsv"))
@@ -349,10 +326,10 @@ write.csv(data.frame(sample_id = ids[!is.na(excl_reason)], patient = samples$pat
                      reason = excl_reason[!is.na(excl_reason)]),
           file.path(meta_dir, "pancanatlas_excluded_samples.csv"), row.names = FALSE)
 
-## 8. ANALYSIS SET ===============================================
-# Female, not excluded on quality annotations, first remaining primary tumour sample per patient
+#Analysis set
+#Female, not excluded on quality annotations, first remaining primary tumour sample per patient
 cand <- sex %in% "female" & is.na(excl_reason)
-ord  <- order(samples$patient, ids)                 # 01A before 01B
+ord  <- order(samples$patient, ids)               
 keep <- ord[cand[ord]]
 first <- logical(length(ids)); first[keep[!duplicated(samples$patient[keep])]] <- TRUE
 in_analysis_set <- cand & first
@@ -368,7 +345,7 @@ set_summary <- data.frame(
   n = c(length(ids), as.integer(table(exclusion_reason)), sum(in_analysis_set)))
 write.csv(set_summary, file.path(out_dir, "analysis_set_summary.csv"), row.names = FALSE)
 
-## 9. SAVE =======================================================
+#Save
 clinical <- data.frame(
   sample_id = ids, patient = samples$patient, file_id = samples$file_id,
   in_analysis_set = in_analysis_set, exclusion_reason = exclusion_reason,
@@ -394,12 +371,9 @@ write.csv(checks_df, file.path(out_dir, "clinical_data_checks.csv"), row.names =
 write.csv(data.frame(field = names(col_found), column = unlist(col_found)),
           file.path(out_dir, "clinical_source_columns_used.csv"), row.names = FALSE)
 
-## 10. REPORT ====================================================
 op <- options(width = 200)
-cat("\n================ CLINICAL DATA AND ANALYSIS SET ================\n")
 print(checks_df[, c("link", "check", "result", "status")], row.names = FALSE)
 cat("\nSource columns used:\n"); print(unlist(col_found))
 cat("\nAnalysis set:\n"); print(set_summary, row.names = FALSE)
 cat("\nSaved: metadata/clinical_variables.csv and metadata/pancanatlas_excluded_samples.csv\n")
-cat("Next: run phase4_immune_landscape.R\n")
 options(op)
