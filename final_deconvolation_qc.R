@@ -1,18 +1,5 @@
-# ============================================================
-# INTEGRATED QC — FIVE IMMUNE DECONVOLUTION METHODS
-# TCGA-BRCA | 1,106 primary tumour samples
-# Uses existing result files only. Does NOT rerun deconvolution.
-#
-# Status levels in the report:
-#   FAIL   = structural problem (missing/duplicated samples, NA, Inf,
-#            wrong number of CIBERSORT cell types, unreadable file)
-#   REVIEW = needs interpretation, not automatically wrong
-#            (negative values, row sums off 1, zero-variance cell types,
-#             all-zero samples, extra sample IDs)
-#   INFO   = context only
-# ============================================================
+# Final Deconvolation QC
 
-## 0. Paths and metadata --------------------------------------
 project_dir <- "C:/Users/karan/OneDrive/Documents/Breast_Cancer_Immune_Infiltration"
 result_dir  <- file.path(project_dir, "results", "deconvolution_results")
 qc_dir      <- file.path(project_dir, "results", "deconvolution_QC")
@@ -32,7 +19,6 @@ if (anyDuplicated(expected_samples))
 if (length(expected_samples) != 1106)
   stop("Expected 1106 samples in metadata, found ", length(expected_samples))
 
-## 1. Explicit result files (no pattern matching) -------------
 result_files <- c(
   quantiseq  = "quantiseq_results_1106.rds",
   EPIC       = "epic_results_1106.rds",
@@ -41,7 +27,6 @@ result_files <- c(
   CIBERSORT  = "cibersort_LM22_results_1106.rds"
 )
 cib_fit_file <- "cibersort_fit_metrics_1106.rds"   # optional, used only if
-# diagnostics aren't embedded
 
 missing_files <- result_files[!file.exists(file.path(result_dir, result_files))]
 if (length(missing_files) > 0) {
@@ -52,7 +37,6 @@ if (length(missing_files) > 0) {
 }
 cat("Result files used:\n"); print(result_files); cat("\n")
 
-## 2. Helpers --------------------------------------------------
 flags <- list()
 add_flag <- function(method, check, level, detail) {
   flags[[length(flags) + 1]] <<- data.frame(
@@ -62,7 +46,6 @@ add_flag <- function(method, check, level, detail) {
 
 norm_name <- function(x) tolower(gsub("[^A-Za-z0-9]", "", x))
 
-# TCGA barcodes sometimes get "-" turned into "." by check.names.
 # Swap back only if it improves matching to the metadata.
 fix_ids <- function(ids) {
   ids <- as.character(ids)
@@ -70,12 +53,12 @@ fix_ids <- function(ids) {
   if (sum(expected_samples %in% alt) > sum(expected_samples %in% ids)) alt else ids
 }
 
-# CIBERSORT fit diagnostics (kept out of the cell-score matrix)
+#CIBERSORT fit diagnostics (kept out of the cell-score matrix)
 diag_map <- c(pvalue = "P-value", pval = "P-value",
               correlation = "Correlation", rmse = "RMSE",
               absolutescoresigscore = "Absolute score (sig.score)")
 
-## 3. Loader: verifies orientation, IDs, duplicates -----------
+##Loader: verifies orientation, IDs, duplicates -----------
 load_method <- function(method, filename) {
   
   x <- readRDS(file.path(result_dir, filename))
@@ -113,7 +96,7 @@ load_method <- function(method, filename) {
     else                 { ids <- col_ids; features <- rownames(x) }
   }
   
-  # Numeric conversion, counting values that fail to convert
+  #Numeric conversion, counting values that fail to convert
   coercion_na <- 0
   for (j in seq_along(x)) {
     v <- x[[j]]
@@ -127,7 +110,7 @@ load_method <- function(method, filename) {
   rownames(mat) <- ids
   colnames(mat) <- features
   
-  # Structural checks — stop this method on failure
+  #Structural checks — stop this method on failure
   if (anyNA(features) || any(features == ""))
     stop("empty cell-type labels present")
   if (anyDuplicated(features))
@@ -145,7 +128,7 @@ load_method <- function(method, filename) {
   
   mat <- mat[expected_samples, , drop = FALSE]   # metadata order
   
-  # Separate fit diagnostics from cell scores
+  #Separate fit diagnostics from cell scores
   diagnostics <- NULL
   d_idx <- which(norm_name(colnames(mat)) %in% names(diag_map))
   if (length(d_idx)) {
@@ -154,7 +137,7 @@ load_method <- function(method, filename) {
     mat <- mat[, -d_idx, drop = FALSE]
   }
   
-  # CIBERSORT: fall back to separate fit-metrics file if needed
+  #CIBERSORT: fall back to separate fit-metrics file if needed
   if (method == "CIBERSORT" && is.null(diagnostics) &&
       file.exists(file.path(result_dir, cib_fit_file))) {
     fd <- as.data.frame(readRDS(file.path(result_dir, cib_fit_file)),
@@ -189,7 +172,7 @@ load_method <- function(method, filename) {
   )
 }
 
-## 4. Load all methods (one failure doesn't stop the others) ---
+##Load all methods (one failure doesn't stop the others)
 method_data <- list()
 load_log <- list()
 for (m in names(result_files)) {
@@ -217,7 +200,7 @@ for (m in names(result_files)) {
 load_log <- do.call(rbind, load_log)
 write.csv(load_log, file.path(qc_dir, "00_load_log.csv"), row.names = FALSE)
 
-## 5. Sample-level QC ------------------------------------------
+##Sample-level QC
 sum_to_one_methods <- c("quantiseq", "EPIC", "CIBERSORT")  # diagnostic only
 sum_tol <- 0.01
 xcell_aggregates <- c("immunescore", "stromascore", "microenvironmentscore")
@@ -276,7 +259,7 @@ sample_qc <- do.call(rbind, lapply(names(method_data), function(m) {
   )
 }))
 
-## 6. Per-cell-type score summary ------------------------------
+##Per-cell-type score summary
 feature_type <- function(m, cell) {
   if (m == "xCell" && norm_name(cell) %in% xcell_aggregates) return("xCell aggregate score")
   if (grepl("uncharacteri", cell, ignore.case = TRUE)) return("non-immune / residual")
@@ -302,9 +285,8 @@ score_summary <- do.call(rbind, lapply(names(method_data), function(m) {
 }))
 write.csv(score_summary, file.path(qc_dir, "02_integrated_score_summary.csv"), row.names = FALSE)
 
-## 7. xCell follow-up ------------------------------------------
+##xCell follow-up 
 # Convergence warnings from the original run are NOT stored in the RDS.
-# This checks the outputs for their likely footprint instead.
 if (!is.null(method_data$xCell)) {
   xm <- method_data$xCell$scores
   agg <- norm_name(colnames(xm)) %in% xcell_aggregates
@@ -330,7 +312,7 @@ if (!is.null(method_data$xCell)) {
            "Original-run warnings cannot be checked from saved results; see 06_xCell_sample_checks.csv for affected-looking samples")
 }
 
-## 8. CIBERSORT diagnostics ------------------------------------
+##CIBERSORT diagnostics
 cib_diag <- if (!is.null(method_data$CIBERSORT)) method_data$CIBERSORT$diagnostics else NULL
 
 if (!is.null(method_data$CIBERSORT)) {
@@ -376,7 +358,7 @@ if (!is.null(cib_diag) && ncol(cib_diag) > 0) {
   write.csv(diagnostic_summary, file.path(qc_dir, "03_CIBERSORT_diagnostics.csv"), row.names = FALSE)
 }
 
-## 9. Plots ----------------------------------------------------
+##Plots
 if (length(method_data)) {
   png(file.path(qc_dir, "04_score_distributions.png"), width = 2200, height = 1700, res = 150)
   op <- par(no.readonly = TRUE)
@@ -420,7 +402,7 @@ if (!is.null(cib_diag)) {
   }
 }
 
-## 10. Aligned matrices for downstream analysis ----------------
+##Aligned matrices for downstream analysis ----------------
 for (m in names(method_data)) {
   out <- data.frame(sample_id = rownames(method_data[[m]]$scores),
                     method_data[[m]]$scores, check.names = FALSE)
@@ -432,7 +414,7 @@ if (!is.null(cib_diag)) {
           file.path(qc_dir, "aligned_CIBERSORT_diagnostics.rds"))
 }
 
-## 11. Overall status + report ---------------------------------
+##Overall status + report
 flag_df <- if (length(flags)) do.call(rbind, flags) else
   data.frame(method = character(), check = character(),
              level = character(), detail = character())
@@ -454,9 +436,6 @@ write.csv(sample_qc, file.path(qc_dir, "01_integrated_sample_QC.csv"), row.names
 
 writeLines(capture.output(sessionInfo()), file.path(qc_dir, "00_sessionInfo.txt"))
 
-cat("\n======================================================================\n")
-cat("INTEGRATED IMMUNE DECONVOLUTION QC\n")
-cat("======================================================================\n\n")
 cat("Load log:\n");     print(load_log, row.names = FALSE)
 cat("\nSample QC:\n");  print(sample_qc, row.names = FALSE)
 cat("\nFlags (FAIL / REVIEW / INFO):\n")
