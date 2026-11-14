@@ -1,7 +1,4 @@
-
-# ==============================================================================
-# CIBERSORT - Step 4: Run LM22 deconvolution
-# ==============================================================================
+# CIBERSORT (LM22 deconvolution)
 
 project_dir <- file.path(
   "C:/Users/karan/OneDrive/Documents",
@@ -28,7 +25,7 @@ source(script_file)
 
 stopifnot(exists("CIBERSORT", mode = "function"))
 
-# Run with 100 permutations; disable quantile normalization for RNA-seq TPM
+#Run with 100 permutations; disable quantile normalization for RNA-seq TPM
 setwd(output_dir)
 
 cibersort_results <- CIBERSORT(
@@ -38,13 +35,13 @@ cibersort_results <- CIBERSORT(
   QN = FALSE
 )
 
-# Save R object
+#Save R object
 saveRDS(
   cibersort_results,
   file = file.path(output_dir, "cibersort_LM22_results_1106.rds")
 )
 
-# Export tabular results
+#Export tabular results
 write.csv(
   data.frame(
     sample_id = rownames(cibersort_results),
