@@ -2,7 +2,7 @@ project_dir <- "C:/Users/karan/OneDrive/Documents/Breast_Cancer_Immune_Infiltrat
 raw_dir <- file.path(project_dir, "metadata", "raw_clinical")
 master  <- readRDS(file.path(project_dir, "metadata", "clinical_master_table.rds"))
 
-## 1. "Do not use" samples: which platform, which vial, and why
+
 qa <- read.delim(file.path(raw_dir, "PanCanAtlas_merged_sample_quality_annotations.tsv"),
                  stringsAsFactors = FALSE, check.names = FALSE)
 col_of <- function(p) grep(p, names(qa), ignore.case = TRUE, value = TRUE)[1]
@@ -23,7 +23,7 @@ mrna <- dnu[grepl("RNASeq", dnu[[c_plat]]) & !grepl("miRNA", dnu[[c_plat]]), ]
 cat("\nmRNA-seq flags (", nrow(mrna), "rows ). All annotation columns:\n")
 print(mrna, row.names = FALSE)
 
-## 2. HER2: how status was decided, and ERBB2 expression
+#HER2: how status was decided, and ERBB2 expression
 cat("\nHER2 IHC vs FISH:\n")
 print(table(IHC = master$her2_ihc, FISH = master$her2_fish, useNA = "ifany"))
 
@@ -46,7 +46,7 @@ cat("\nHow Luminal A HER2-positive calls were made (IHC x FISH):\n")
 la <- pos[pos$pam50 %in% "Luminal A", ]
 print(table(IHC = la$her2_ihc, FISH = la$her2_fish, useNA = "ifany"))
 
-## 3. Lymph node column name in the clinical supplement
+#Lymph node column name in the clinical supplement
 bt <- readRDS(file.path(raw_dir, "gdc_biotab_clinical_raw.rds"))
 cat("\nLymph-node columns in the clinical supplement:\n")
 print(grep("lymph|node", names(bt[["clinical_patient_brca"]]), value = TRUE, ignore.case = TRUE))
