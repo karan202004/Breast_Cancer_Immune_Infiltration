@@ -1,40 +1,5 @@
-# ============================================================
-# TUMOUR MICROENVIRONMENT CHARACTERISATION  (steps 37–43)
-# TCGA-BRCA | 1,069 tumours in the analysis set
-#
-# Run order:  1. clinical_data_and_analysis_set.R
-#             2. phase4_immune_landscape.R
-#             3. clinical_master_table_qc.R
-#             4. clinical_immune_integration.R
-#             5. tme_characterization.R   (this script)
-#
-# Uses the existing three immune clusters (no re-clustering) and adds what the
-# cells are doing:
-#   37. Immune composition: CIBERSORT LM22 in relative mode = share of each cell type
-#       within the immune infiltrate (Newman et al. Nat Methods 2015;12:453-457)
-#   38. Relationships between immune, stromal, functional and tumour signals
-#   39. Functional and tumour-related signals (gene signatures, sources below)
-#   40–41. Signals by cluster; basal-like "hot" vs "cold" tumours
-#   42. Signals by PAM50 (other clinical associations: clinical_immune_integration.R;
-#       histologic grade is not available in TCGA-BRCA)
-#   43. Integrated TME figures
-#
-# Gene signatures (gene lists checked against the cited sources):
-#   - Cytolytic activity: geometric mean of GZMA and PRF1 in TPM, 0.01 offset
-#     (Rooney et al. Cell 2015;160:48-61)
-#   - IFN-gamma response: 10-gene preliminary IFN-gamma set
-#     (Ayers et al. J Clin Invest 2017;127:2930-2940)
-#   - Antigen presentation: 18 antigen processing and presentation genes
-#     (Wang et al. eLife 2019;8:e49020; gene list from Leone et al. 2013).
-#     Wang et al. scored with GSVA; here the mean z-score is used (stated in methods).
-#   - TGF-beta signalling and proliferation (G2M checkpoint): MSigDB Hallmark sets
-#     (Liberzon et al. Cell Syst 2015;1:417-425), read with the msigdbr package
-#   - Immune checkpoints: single genes (CD274/PD-L1, PDCD1/PD-1, PDCD1LG2/PD-L2,
-#     CTLA4, LAG3, HAVCR2/TIM-3, TIGIT, IDO1)
-# Signature score = mean of per-gene z-scores of log2(TPM + 1) across the analysis set.
-# Statistics: Kruskal-Wallis (epsilon-squared), Wilcoxon rank-sum, Spearman;
-# Benjamini-Hochberg FDR within each table.
-# ============================================================
+#Tumour Microenvironment Characterisation
+
 
 for (p in c("ggplot2", "pheatmap", "msigdbr"))
   if (!requireNamespace(p, quietly = TRUE)) install.packages(p)
@@ -51,7 +16,7 @@ eps2 <- function(H, n) as.numeric(H / (n - 1))
 med_iqr <- function(x) sprintf("%.2f (%.2f to %.2f)", median(x, na.rm = TRUE),
                                quantile(x, .25, na.rm = TRUE), quantile(x, .75, na.rm = TRUE))
 
-## 1. DATA =======================================================
+
 m    <- readRDS(file.path(meta_dir, "clinical_master_table.rds"))
 land <- readRDS(file.path(project_dir, "results", "immune_landscape", "sample_level_results.rds"))
 a <- m[m$in_analysis_set, ]
@@ -73,7 +38,7 @@ if (!all(ids %in% colnames(tpm))) stop("Some analysis-set samples are missing fr
 tpm <- tpm[, ids]
 lt  <- log2(tpm + 1)
 
-## 2. GENE SETS ==================================================
+#Gene set
 hallmark <- NULL
 hallmark <- tryCatch(msigdbr::msigdbr(species = "Homo sapiens", collection = "H"),
                      error = function(e) tryCatch(msigdbr::msigdbr(species = "Homo sapiens", category = "H"),
@@ -137,7 +102,7 @@ write.csv(genes_used, file.path(out_dir, "signature_gene_sets_used.csv"), row.na
 
 a <- cbind(a, sig[ids, , drop = FALSE])
 
-## 3. STEP 37: IMMUNE COMPOSITION (CIBERSORT, RELATIVE) ===========
+#Immune Composition (CIBERSORT, RELATIVE) 
 cib <- readRDS(file.path(project_dir, "results", "deconvolution_QC", "aligned_CIBERSORT_scores.rds"))
 cib <- cib[match(ids, cib$sample_id), ]
 cib_col <- function(lab) { i <- match(nn(lab), nn(names(cib))); if (is.na(i)) stop("CIBERSORT column not found: ", lab); names(cib)[i] }
@@ -184,7 +149,7 @@ p_comp <- ggplot(comp_long, aes(cluster, pct, fill = cell_type)) +
   theme_bw()
 ggsave(file.path(out_dir, "immune_composition_by_cluster_barplot.png"), p_comp, width = 8, height = 6, dpi = 200)
 
-## 4. STEP 38: RELATIONSHIPS =====================================
+#Relationships
 rel_vars <- c("immune_score", "stroma_score", "CD8_T_cells", "B_cells", "Macrophages", "CAFs", "Endothelial",
               sig_names, cp_names, "leukocyte_fraction_methylation", "absolute_purity")
 rel_lab <- c(immune_score = "Immune score", stroma_score = "Stromal score",
@@ -200,7 +165,7 @@ pheatmap::pheatmap(cm, display_numbers = TRUE, number_format = "%.2f", fontsize_
                    main = "Relationships between TME features (Spearman)",
                    filename = file.path(out_dir, "tme_feature_correlation_heatmap.png"), width = 11, height = 10)
 
-## 5. STEPS 39–41: SIGNALS BY CLUSTER ============================
+#Signal by cluster
 feat <- c(sig_names, cp_names, "M2_share_of_macrophages")
 by_cluster <- do.call(rbind, lapply(feat, function(f) {
   ok <- !is.na(a[[f]])
@@ -232,7 +197,7 @@ resid_tab <- do.call(rbind, lapply(c(sig_names, cp_names), function(f) {
 resid_tab$q_value_fdr <- signif(p.adjust(resid_tab$p_value, "BH"), 3); resid_tab$p_value <- signif(resid_tab$p_value, 3)
 write.csv(resid_tab, file.path(out_dir, "functional_signals_adjusted_for_immune_score.csv"), row.names = FALSE)
 
-## 6. BASAL-LIKE: HOT vs COLD ====================================
+#Basel-like: Hot vs Cold
 bas <- a$pam50 %in% "Basal-like" & a$cluster_name %in% c("Immune-enriched", "Depleted")
 b <- a[bas, ]; b$group <- droplevels(b$cluster_name)
 std <- function(x) (x - mean(x, na.rm = TRUE)) / sd(x, na.rm = TRUE)   # z within the whole analysis set
@@ -267,7 +232,7 @@ p_hc <- ggplot(hc_plot, aes(difference, feature, colour = sig)) +
   theme_bw()
 ggsave(file.path(out_dir, "basal_like_hot_vs_cold.png"), p_hc, width = 8.5, height = 6.5, dpi = 200)
 
-## 7. STEP 42: SIGNALS BY PAM50 ==================================
+#Signal by PAM50
 by_pam <- do.call(rbind, lapply(c(sig_names, cp_names), function(f) {
   ok <- !is.na(a$pam50)
   kw <- kruskal.test(a[[f]][ok] ~ droplevels(a$pam50[ok]))
@@ -277,13 +242,13 @@ by_pam <- do.call(rbind, lapply(c(sig_names, cp_names), function(f) {
 by_pam$q_value_fdr <- signif(p.adjust(by_pam$p_value, "BH"), 3); by_pam$p_value <- signif(by_pam$p_value, 3)
 write.csv(by_pam, file.path(out_dir, "functional_signals_by_PAM50.csv"), row.names = FALSE)
 
-## 8. STEP 43: INTEGRATED TME FIGURES ============================
+#Integrated TME figures
 zfeat <- c("CD8_T_cells", "B_cells", "Macrophages", "CAFs", "Endothelial", sig_names, cp_names)
 Z <- sapply(zfeat, function(f) std(a[[f]]))
 rownames(Z) <- ids
 colnames(Z) <- gsub("_", " ", colnames(Z))
 
-# 8a. Cluster-level summary
+#Cluster-level summary
 cl_mean <- t(sapply(levels(a$cluster_name), function(cl) colMeans(Z[a$cluster_name == cl, , drop = FALSE])))
 rownames(cl_mean) <- paste0(levels(a$cluster_name), " (n=", table(a$cluster_name), ")")
 pheatmap::pheatmap(t(cl_mean), cluster_rows = FALSE, cluster_cols = FALSE,
@@ -294,7 +259,7 @@ pheatmap::pheatmap(t(cl_mean), cluster_rows = FALSE, cluster_cols = FALSE,
                    main = "TME profile by cluster (mean z-score)",
                    filename = file.path(out_dir, "tme_profile_by_cluster_heatmap.png"), width = 6.5, height = 7.5)
 
-# 8b. Tumour-level integrated heatmap
+#Tumour-level integrated heatmap
 o <- order(a$cluster_name, -a$immune_score)
 hm <- t(Z[o, ]); hm[hm > 2.5] <- 2.5; hm[hm < -2.5] <- -2.5
 pam_cols <- c("Luminal A" = "#1F4E9C", "Luminal B" = "#7FB2E5", "HER2-enriched" = "#E78AC3",
@@ -319,18 +284,17 @@ out_scores <- data.frame(sample_id = ids, cluster = a$cluster_name, pam50 = a$pa
 write.csv(out_scores, file.path(out_dir, "tme_sample_level_scores.csv"), row.names = FALSE)
 writeLines(capture.output(sessionInfo()), file.path(out_dir, "R_session_info.txt"))
 
-## 9. REPORT ====================================================
+
 op <- options(width = 220)
-cat("\n================ TME CHARACTERISATION ================\n")
 cat("Tumours:", nrow(a), "| CIBERSORT P<0.05 subset:", sum(cib_sig, na.rm = TRUE), "\n")
 cat("\nGene sets used:\n"); print(genes_used[, c("signature", "source", "n_genes_listed", "n_genes_found", "genes_missing")], row.names = FALSE)
-cat("\n37. Immune composition by cluster (CIBERSORT, mean % of immune infiltrate):\n"); print(comp_tab, row.names = FALSE)
-cat("\n39-41. Functional signals by cluster, median (IQR):\n"); print(by_cluster, row.names = FALSE)
+cat("\n Immune composition by cluster (CIBERSORT, mean % of immune infiltrate):\n"); print(comp_tab, row.names = FALSE)
+cat("\n  Functional signals by cluster, median (IQR):\n"); print(by_cluster, row.names = FALSE)
 cat("\nSame signals after removing the effect of overall immune content (median residual):\n"); print(resid_tab, row.names = FALSE)
 cat("\nBasal-like hot vs cold:\n"); print(hot_cold, row.names = FALSE)
 cat("\nBasal-like hot vs cold, receptor subtype:\n"); print(table(b$group, b$receptor_subtype, useNA = "ifany"))
-cat("\n42. Signals by PAM50 (median):\n"); print(by_pam, row.names = FALSE)
-cat("\n38. Key correlations (Spearman):\n")
+cat("\n  Signals by PAM50 (median):\n"); print(by_pam, row.names = FALSE)
+cat("\n Key correlations (Spearman):\n")
 key <- c("Immune score", "Stromal score", sig_names, "Tumour purity (ABSOLUTE)")
 print(round(cm[key, key], 2))
 cat("\nSaved to:", out_dir, "\n"); print(sort(list.files(out_dir)))
