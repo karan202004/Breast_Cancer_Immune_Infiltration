@@ -1,29 +1,4 @@
-# ============================================================
-# FINAL FIGURES  (publication versions)
-# TCGA-BRCA | 1,069 tumours in the analysis set
-#
-# Run order:  1. clinical_data_and_analysis_set.R
-#             2. phase4_immune_landscape.R
-#             3. clinical_master_table_qc.R
-#             4. clinical_immune_integration.R
-#             5. tme_characterization.R
-#             6. survival_outcome_data_check.R
-#             7. survival_analysis.R
-#             8. final_figures.R                   (this script)
-#
-# Reads the saved results of scripts 1-7; no new analysis except redrawing curves.
-# Writes results/figures/main/ and results/figures/supplementary/ (PNG 300 dpi + PDF),
-# plus figure_plan.csv listing every figure, its panels and its source.
-#
-# Fixes applied (deferred from earlier phases):
-#   - one fixed colour scheme for clusters, PAM50, immune group and stage in every figure
-#     (only Basal-like stays red, by convention; stage now purple, immune group grey/black)
-#   - n shown on every composition bar
-#   - CIBERSORT bars coloured by lineage (T/NK blues, B-lineage greens, myeloid oranges, granulocytes greys)
-#   - readable labels everywhere (no "M2_share_of_macrophages", "age", "CD8_T_cells")
-#   - Kaplan-Meier: y-axis from 0.4, curves dashed where fewer than 20 patients remain at risk,
-#     numbers at risk under every panel
-# ============================================================
+# Final Figures
 
 suppressPackageStartupMessages({
   library(survival); library(splines); library(ggplot2)
@@ -37,7 +12,7 @@ main_dir <- file.path(res_dir, "figures", "main")
 supp_dir <- file.path(res_dir, "figures", "supplementary")
 for (d in c(main_dir, supp_dir)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
 
-## 1. DATA =======================================================
+
 m    <- readRDS(file.path(project_dir, "metadata", "clinical_master_table.rds"))
 land <- readRDS(file.path(res_dir, "immune_landscape", "sample_level_results.rds"))
 tme  <- read.csv(file.path(res_dir, "tme_characterization", "tme_sample_level_scores.csv"), check.names = FALSE)
@@ -74,7 +49,7 @@ cib_names <- intersect(c("CD8 T cells", "CD4 T cells", "Tregs", "Gamma-delta T c
                          "Mast cells", "Eosinophils", "Neutrophils"), names(tme))
 for (f in c(sig_names, cp_names, "M2_share_of_macrophages")) a[[f]] <- tme[[f]]
 
-## 2. STYLE ======================================================
+
 cl_cols    <- c("Immune-enriched" = "#E69F00", "Stroma-rich" = "#009E73", "Depleted" = "#7F7F7F")
 pam_cols   <- c("Luminal A" = "#1F4E9C", "Luminal B" = "#7FB2E5", "HER2-enriched" = "#E78AC3",
                 "Basal-like" = "#D7301F", "Normal-like" = "#B8E186")
@@ -128,7 +103,7 @@ plan <- list()
 add_plan <- function(placement, figure, file, panels, source)
   plan[[length(plan) + 1]] <<- data.frame(placement, figure, file, panels, source_script = source)
 
-## 3. SURVIVAL HELPERS ===========================================
+#Survival Helpers
 surv_data <- function(e, var) {
   t <- a[[paste0(e, ".time")]]; s <- a[[e]]; g <- a[[var]]
   ok <- !is.na(t) & t > 0 & !is.na(s) & !is.na(g)
@@ -220,7 +195,7 @@ spline_plot <- function(e) {
     theme_pub
 }
 
-## 4. MAIN FIGURE 1: IMMUNE LANDSCAPE HEATMAP ====================
+#Main figure 1: immune landscape heatmap
 o <- order(a$cluster_name, -a$immune_score)
 na_unknown <- function(x, lv) factor(ifelse(is.na(x), "Unknown", as.character(x)), levels = c(lv, "Unknown"))
 ann <- data.frame(Cluster = a$cluster_name[o], `Immune group` = a$immune_group[o],
@@ -252,7 +227,7 @@ save_ph(supp_dir, "immune_landscape_heatmap_all_features", 11, 6,
 add_plan("Supplementary", "", "immune_landscape_heatmap_all_features",
          "Figure 1 with exploratory single-method features added", "phase4_immune_landscape.R")
 
-## 5. MAIN FIGURE 2: CLUSTERS AND CLINICAL CONTEXT ===============
+#Main figure 2: clusters and clinical context
 # A. cluster profiles
 prof <- do.call(rbind, lapply(landscape_features[1:5], function(f) {
   z <- int(a[[f]])
@@ -303,7 +278,7 @@ add_plan("Main", "Figure 2", "immune_clusters_and_clinical_context",
          "A cluster profiles (mean z of consensus features); B RNA immune score vs methylation leukocyte fraction; C cluster composition within PAM50, receptor subtype, stage and histology (n per bar)",
          "phase4_immune_landscape.R; clinical_immune_integration.R")
 
-## 6. MAIN FIGURE 3: TUMOUR MICROENVIRONMENT BY CLUSTER ===========
+#Main figure 3: tumour microenvironment by cluster
 # A. CIBERSORT composition coloured by lineage
 cib_long <- do.call(rbind, lapply(levels(a$cluster_name), function(cl)
   data.frame(cluster = cl, cell_type = cib_names, pct = colMeans(tme[a$cluster_name == cl, cib_names, drop = FALSE], na.rm = TRUE))))
@@ -342,7 +317,7 @@ add_plan("Main", "Figure 3", "tumour_microenvironment_by_cluster",
          "A CIBERSORT immune composition by cluster coloured by lineage; B cluster mean z-scores of cell features, functional signatures and checkpoint genes",
          "tme_characterization.R")
 
-## 7. MAIN FIGURE 4: SURVIVAL ====================================
+#Main figure 4: Survival
 hr_ie <- mv[mv$endpoint == "PFI" & mv$exposure == "Immune cluster (ref Depleted)" & mv$level == "Immune-enriched", ]
 note_ie <- if (nrow(hr_ie)) sprintf("Adjusted HR Immune-enriched vs Depleted\n%.2f (%.2f-%.2f), p = %s",
                                     hr_ie$HR, hr_ie$CI_lower, hr_ie$CI_upper, format.pval(hr_ie$p, digits = 2)) else NULL
@@ -375,7 +350,7 @@ add_plan("Main", "Figure 4", "survival_by_immune_infiltration",
          "A Kaplan-Meier PFI by cluster (dashed where <20 at risk; y-axis from 0.4); B adjusted spline of immune score for PFI; C adjusted hazard ratios for PFI and OS",
          "survival_analysis.R")
 
-## 8. SUPPLEMENTARY FIGURES (redrawn) ============================
+#Supplementary figures (redrawn)
 # Kaplan-Meier, all four endpoints
 ep <- c(PFI = "Progression-free interval", OS = "Overall survival", DFI = "Disease-free interval",
         DSS = "Disease-specific survival")
@@ -465,7 +440,7 @@ save_ph(supp_dir, "integrated_tme_heatmap", 11, 6.5, mat = Z, cluster_rows = FAL
 add_plan("Supplementary", "", "integrated_tme_heatmap",
          "Sample-level heatmap of cell features, signatures and checkpoints with methylation LF and purity", "tme_characterization.R")
 
-## 9. SUPPLEMENTARY FIGURES (copied unchanged) ===================
+#Supplementary figures (redrawn)
 copies <- list(
   c("", "immune_landscape/feature_distribution_violin_plot.png", "feature_distributions", "Distributions of all deconvolution features"),
   c("", "immune_landscape/cluster_number_selection_plot.png", "cluster_number_selection", "Choice of k for k-means"),
@@ -483,9 +458,7 @@ for (cp in copies) {
   } else message("Not found, skipped: ", cp[2])
 }
 
-## 10. FIGURE PLAN ===============================================
 plan_df <- do.call(rbind, plan)
-# Supplementary numbering follows the order of the paper
 supp_order <- c("feature_distributions", "landscape_feature_correlations", "cluster_number_selection",
                 "immune_landscape_heatmap_all_features", "methylation_and_purity_by_cluster",
                 "immune_and_stromal_scores_by_subtype_and_stage", "integrated_tme_heatmap",
@@ -499,6 +472,5 @@ plan_df$figure[plan_df$placement == "Supplementary"] <- paste0("Figure S", rank(
 plan_df <- plan_df[order(plan_df$placement != "Main", ifelse(is.na(s_idx), 0, s_idx), plan_df$figure), ]
 write.csv(plan_df, file.path(res_dir, "figures", "figure_plan.csv"), row.names = FALSE)
 
-cat("\n================ FINAL FIGURES ================\n")
 print(plan_df[, c("placement", "figure", "file")], row.names = FALSE)
 cat("\nMain:", main_dir, "\nSupplementary:", supp_dir, "\n")
