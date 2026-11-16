@@ -1,34 +1,4 @@
-# ============================================================
-# CLINICAL-IMMUNE INTEGRATION  (steps 33–36)
-# TCGA-BRCA | 1,069 tumours in the analysis set
-#
-# Run order:  1. clinical_data_and_analysis_set.R
-#             2. phase4_immune_landscape.R
-#             3. clinical_master_table_qc.R
-#             4. clinical_immune_integration.R   (this script)
-#
-# What it does
-#   A. Independent validation: RNA-based immune/stromal scores vs DNA-methylation
-#      leukocyte fraction (Thorsson et al. Immunity 2018) and ABSOLUTE purity.
-#   B. Step 33  Subtype: PAM50 (primary), clinical receptor subtype (secondary,
-#      recorded and strict-HER2 versions).
-#   C. Step 34  Stage: AJCC stage, T, N, M. Histologic grade is not available in
-#      TCGA-BRCA clinical data (checked in clinical_data_and_analysis_set.R).
-#   D. Step 35  ER, PR, HER2 (recorded and strict).
-#   E. Step 36  Age, histology, menopausal status, race.
-#   F. Immune and stromal scores adjusted for PAM50, stage, age and histology.
-#
-# Outcomes compared against every variable: immune cluster, immune score, stromal score.
-# Statistics
-#   - cluster vs categorical variable: chi-square, Monte-Carlo p (10,000 draws);
-#     effect size Cramer's V (Cramer, Mathematical Methods of Statistics, 1946)
-#   - score vs categorical variable: Kruskal-Wallis; effect size epsilon-squared
-#     (Tomczak & Tomczak, Trends Sport Sci 2014;21:19-25)
-#   - score vs age: Spearman correlation
-#   - multiple testing: Benjamini-Hochberg FDR across all tests
-#     (Benjamini & Hochberg, J R Stat Soc B 1995;57:289-300)
-# Survival analysis is not done here (next phase).
-# ============================================================
+#Clinical Immune Integration
 
 for (p in c("ggplot2")) if (!requireNamespace(p, quietly = TRUE)) install.packages(p)
 suppressPackageStartupMessages(library(ggplot2))
@@ -39,7 +9,6 @@ meta_dir <- file.path(project_dir, "metadata")
 out_dir  <- file.path(project_dir, "results", "clinical_immune_integration")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-## 1. DATA =======================================================
 m    <- readRDS(file.path(meta_dir, "clinical_master_table.rds"))
 land <- readRDS(file.path(project_dir, "results", "immune_landscape", "sample_level_results.rds"))
 a <- m[m$in_analysis_set, ]
@@ -88,7 +57,7 @@ cramers_v <- function(tb) {
 eps2 <- function(H, n) as.numeric(H / (n - 1))
 med_iqr <- function(x) sprintf("%.2f (%.2f to %.2f)", median(x), quantile(x, .25), quantile(x, .75))
 
-## 2. INDEPENDENT VALIDATION (A) =================================
+#Independent Validation
 val_rows <- list()
 refs <-c(leukocyte_fraction_methylation = "Leukocyte fraction (DNA methylation)",
          absolute_purity = "Tumour purity (ABSOLUTE)")
@@ -113,7 +82,6 @@ val_cluster <- do.call(rbind, lapply(names(refs), function(r) {
 }))
 write.csv(val_cluster, file.path(out_dir, "methylation_and_purity_by_cluster.csv"), row.names = FALSE)
 
-## 3. ASSOCIATIONS WITH CLINICAL VARIABLES (B–E) =================
 assoc <- list(); by_level <- list(); tab1 <- list()
 for (lab in names(cat_vars)) {
   v <- a[[cat_vars[[lab]]]]
@@ -191,7 +159,7 @@ n_row <- data.frame(variable = "Tumours", category = "n", Overall = as.character
 tab1_df <- rbind(n_row, age_row, do.call(rbind, tab1)); rownames(tab1_df) <- NULL
 write.csv(tab1_df, file.path(out_dir, "cohort_characteristics_by_cluster.csv"), row.names = FALSE)
 
-## 4. ADJUSTED MODELS (F) ========================================
+# Adjusted Models
 # Do immune/stromal scores differ by stage, age and histology after accounting for PAM50?
 mdat <- a[, c("immune_score", "stroma_score", "pam50", "stage", "age", "histology_group")]
 mdat <- mdat[complete.cases(mdat), ]
@@ -218,8 +186,7 @@ adj_coef_df  <- do.call(rbind, adj_coef);  rownames(adj_coef_df) <- NULL
 write.csv(adj_terms_df, file.path(out_dir, "adjusted_model_terms.csv"), row.names = FALSE)
 write.csv(adj_coef_df, file.path(out_dir, "adjusted_model_coefficients.csv"), row.names = FALSE)
 
-## 5. FIGURES ====================================================
-# 5a. Independent validation
+#Figures
 ok <- !is.na(a$leukocyte_fraction_methylation)
 rho_lf <- validation$spearman_rho[validation$reference == refs[[1]] & validation$rna_feature == "immune_score"]
 p_val1 <- ggplot(a[ok, ], aes(immune_score, leukocyte_fraction_methylation, colour = cluster_name)) +
@@ -244,7 +211,7 @@ p_val2 <- ggplot(vlong, aes(cluster, value, fill = cluster)) +
 ggsave(file.path(out_dir, "methylation_and_purity_by_cluster_boxplot.png"), p_val2,
        width = 9, height = 4.5, dpi = 200)
 
-# 5b. Scores by subtype and stage
+# Scores by subtype and stage
 sv <- c("PAM50" = "pam50", "Receptor subtype" = "receptor_subtype", "Stage" = "stage")
 slong <- do.call(rbind, lapply(names(sv), function(lab) {
   v <- a[[sv[[lab]]]]
@@ -263,7 +230,7 @@ p_sc <- ggplot(slong, aes(category, value)) +
 ggsave(file.path(out_dir, "immune_and_stromal_scores_by_subtype_and_stage.png"), p_sc,
        width = 12, height = 6.5, dpi = 200)
 
-# 5c. Cluster mix within each clinical group
+# Cluster mix within each clinical group
 cv <- c("PAM50" = "pam50", "Receptor subtype" = "receptor_subtype", "Stage" = "stage",
         "Histology" = "histology_group")
 clong <- do.call(rbind, lapply(names(cv), function(lab)
@@ -283,7 +250,7 @@ p_mix <- ggplot(clong, aes(category, fill = cluster)) +
 ggsave(file.path(out_dir, "cluster_composition_by_clinical_group.png"), p_mix,
        width = 12, height = 5, dpi = 200)
 
-# 5d. Effect-size overview
+# Effect-size overview
 eff <- assoc_df[!grepl("strict", assoc_df$variable), ]
 eff$abs_effect <- abs(eff$effect_size)
 eff$significant <- ifelse(eff$q_value_fdr < 0.05, "FDR < 0.05", "not significant")
@@ -300,9 +267,7 @@ ggsave(file.path(out_dir, "clinical_association_effect_sizes.png"), p_eff, width
 
 writeLines(capture.output(sessionInfo()), file.path(out_dir, "R_session_info.txt"))
 
-## 6. REPORT ====================================================
 op <- options(width = 200)
-cat("\n================ CLINICAL-IMMUNE INTEGRATION ================\n")
 cat("Tumours:", nrow(a), "\n")
 cat("\nA. RNA scores vs DNA-based measures (Spearman):\n")
 print(validation, row.names = FALSE)
