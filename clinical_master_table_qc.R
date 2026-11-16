@@ -1,15 +1,4 @@
-# ============================================================
-# CLINICAL MASTER TABLE + MATCHING QC
-# TCGA-BRCA | 1,106 primary tumour RNA-seq samples
-#
-# Run order:  1. clinical_data_and_analysis_set.R
-#             2. phase4_immune_landscape.R
-#             3. clinical_master_table_qc.R   (this script)
-#
-# Checks every link  Clinical <-> Sample <-> Expression <-> Immune results,
-# checks clinical records against gene expression, and writes the master table.
-# Nothing is excluded here: discordant samples are flagged for review.
-# ============================================================
+# Clinical master table and matching QC
 
 for (p in c("ggplot2")) if (!requireNamespace(p, quietly = TRUE)) install.packages(p)
 suppressPackageStartupMessages(library(ggplot2))
@@ -27,7 +16,6 @@ log_check <- function(link, check, result, status, detail = "") {
 }
 pass_fail <- function(ok) if (isTRUE(ok)) "PASS" else "FAIL"
 
-## 1. INPUTS =====================================================
 clinical <- readRDS(file.path(meta_dir, "clinical_variables.rds"))
 ids <- as.character(clinical$sample_id)
 samples <- read.csv(file.path(meta_dir, "primary_tumor_1106_metadata.csv"), stringsAsFactors = FALSE)
@@ -35,7 +23,7 @@ log_check("Clinical <-> Sample", "Clinical table has the 1,106 samples in metada
           identical(ids, as.character(samples$sample_id)),
           pass_fail(identical(ids, as.character(samples$sample_id))))
 
-## 2. EXPRESSION =================================================
+#Expression
 tpm <- read.delim(file.path(project_dir, "data", "CIBERSORT", "BRCA_TPM_1106.txt"),
                   check.names = FALSE, stringsAsFactors = FALSE)
 genes <- tpm[[1]]; tpm <- as.matrix(tpm[, -1]); storage.mode(tpm) <- "numeric"
@@ -63,7 +51,7 @@ if (file.exists(alt_file)) {
   }
 }
 
-## 3. IMMUNE RESULTS ============================================
+#Immune results
 cons <- readRDS(file.path(project_dir, "results", "method_comparison_consensus",
                           "06_consensus_immune_features.rds"))
 land <- readRDS(file.path(project_dir, "results", "immune_landscape", "sample_level_results.rds"))
@@ -77,10 +65,10 @@ log_check("Expression <-> Immune", "Immune landscape results cover exactly the a
           pass_fail(land_ok), if (land_ok) "" else "Run phase4_immune_landscape.R before this script")
 if (!land_ok) stop("Immune landscape results do not match the analysis set. Run phase4_immune_landscape.R first.")
 
-## 4. CLINICAL RECORDS vs GENE EXPRESSION ========================
+#Clincal records VS Gene expression
 lg <- function(g) if (g %in% rownames(tpm)) log2(tpm[g, ] + 1) else rep(NA_real_, ncol(tpm))
 
-# 4a. Sex from expression (sample-swap check; Toker et al. F1000Research 2016;5:2103).
+# Sex from expression (sample-swap check; Toker et al. F1000Research 2016;5:2103).
 # Y-linked genes decide: XIST loss is common in breast tumours, so low XIST alone is not "male".
 y_genes <- intersect(c("RPS4Y1", "DDX3Y", "KDM5D", "UTY", "EIF1AY"), rownames(tpm))
 y_expr  <- colMeans(log2(tpm[y_genes, , drop = FALSE] + 1))
@@ -92,7 +80,7 @@ log_check("Clinical <-> Expression", "Clinical sex matches Y-chromosome gene exp
           if (sum(sex_mismatch) == 0) "PASS" else "FLAG",
           paste(head(ids[sex_mismatch], 5), collapse = ", "))
 
-# 4b. Receptor status vs expression of its gene
+# Receptor status vs expression of its gene
 auc <- function(score, label) {
   ok <- !is.na(score) & label %in% c("Positive", "Negative")
   s <- score[ok]; l <- label[ok] == "Positive"; r <- rank(s)
@@ -123,9 +111,8 @@ for (r in names(conc)) {
 conc_tab <- do.call(rbind, conc_rows)
 write.csv(conc_tab, file.path(out_dir, "receptor_expression_concordance.csv"), row.names = FALSE)
 
-# 4c. Stricter HER2 (sensitivity definition, data-driven, not a guideline):
+# Stricter HER2 (sensitivity definition, data-driven, not a guideline):
 # a recorded positive is kept only if FISH-positive or ERBB2 mRNA is above the 95th
-# percentile of recorded HER2-negative tumours; otherwise it is set to missing.
 erbb2 <- lg("ERBB2")
 neg95 <- quantile(erbb2[clinical$her2_status %in% "Negative"], 0.95, na.rm = TRUE)
 her2_supported <- clinical$her2_status %in% "Positive" &
@@ -141,13 +128,13 @@ log_check("Clinical <-> Expression", "HER2-positive calls supported by FISH or h
           sprintf("%d of %d", sum(her2_supported), sum(clinical$her2_status %in% "Positive")), "INFO",
           "Unsupported calls are missing in her2_status_strict (sensitivity analysis)")
 
-# 4d. PAM50 vs clinical receptor subtype (analysis set)
+# PAM50 vs clinical receptor subtype (analysis set)
 a_rows <- clinical$in_analysis_set
 pam_rec <- table(PAM50 = clinical$pam50[a_rows], receptor_subtype = clinical$receptor_subtype[a_rows],
                  useNA = "ifany")
 write.csv(as.data.frame.matrix(pam_rec), file.path(out_dir, "PAM50_vs_receptor_subtype.csv"))
 
-## 5. MASTER TABLE ===============================================
+#Master Table
 li <- match(ids, land$sample_id)
 master <- data.frame(
   clinical,
@@ -194,7 +181,7 @@ write.csv(completeness, file.path(out_dir, "variable_completeness.csv"), row.nam
 checks_df <- do.call(rbind, checks)
 write.csv(checks_df, file.path(out_dir, "sample_matching_qc_checks.csv"), row.names = FALSE)
 
-## 6. QC FIGURES ================================================
+#QC Figures
 p_sex <- ggplot(data.frame(xist = xist, y = y_expr,
                            sex = ifelse(is.na(clinical$sex), "unknown", clinical$sex)),
                 aes(xist, y, colour = sex)) +
@@ -215,9 +202,8 @@ p_rec <- ggplot(cl_df, aes(status, expr, fill = status)) +
   theme_bw() + theme(legend.position = "none")
 ggsave(file.path(out_dir, "receptor_status_vs_expression.png"), p_rec, width = 10, height = 4.5, dpi = 200)
 
-## 7. REPORT ====================================================
 op <- options(width = 200)
-cat("\n================ CLINICAL MASTER TABLE + MATCHING QC ================\n")
+
 print(checks_df[, c("link", "check", "result", "status")], row.names = FALSE)
 cat("\nReceptor status vs expression:\n"); print(conc_tab, row.names = FALSE)
 cat("\nPAM50 vs receptor subtype, analysis set (counts):\n"); print(pam_rec)
