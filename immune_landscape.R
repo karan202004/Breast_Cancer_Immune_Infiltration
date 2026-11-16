@@ -1,20 +1,5 @@
-# ============================================================
-# PHASE 4: IMMUNE LANDSCAPE (STEPS 24–29)
-# TCGA-BRCA | female primary tumours, one sample per patient
-#
-# 24. Immune-cell distributions
-# 25. Immune-cell correlations
-# 26. Tumour microenvironment clustering (consensus features)
-# 27. Immune phenotypes (cluster profiles + clinical associations)
-# 28. Immune-high/low groups (data-driven, Gaussian mixture)
-# 29. Immune landscape figures
-#
-# Run order:  1. clinical_data_and_analysis_set.R
-#             2. phase4_immune_landscape.R   (this script)
-#             3. clinical_master_table_qc.R
-# ============================================================
+#Immune landscape
 
-## 0. Settings --------------------------------------------------
 project_dir <- "C:/Users/karan/OneDrive/Documents/Breast_Cancer_Immune_Infiltration"
 qc_dir   <- file.path(project_dir, "results", "deconvolution_QC")
 cmp_dir  <- file.path(project_dir, "results", "method_comparison_consensus")
@@ -44,7 +29,7 @@ suppressPackageStartupMessages({ library(ggplot2); library(mclust) })
 nn  <- function(s) tolower(gsub("[^A-Za-z0-9]", "", s))
 int <- function(v) qnorm((rank(v, ties.method = "average") - 0.5) / length(v))
 
-## 1. Load and align data ---------------------------------------
+#Load and align data
 cons <- readRDS(file.path(cmp_dir, "06_consensus_immune_features.rds"))
 clin <- readRDS(file.path(meta_dir, "clinical_variables.rds"))   # from clinical_data_and_analysis_set.R
 if (!identical(as.character(cons$sample_id), as.character(clin$sample_id)))
@@ -67,9 +52,7 @@ getcol <- function(df, name) {
   as.numeric(df[[i]])
 }
 
-## 2. Analysis set ----------------------------------------------
-# Defined once in clinical_data_and_analysis_set.R: female, not excluded on
-# TCGA/PanCanAtlas quality annotations, first primary tumour sample per patient
+#Analysis set
 n_all    <- nrow(clin)
 analysis <- clin$in_analysis_set
 if (is.null(analysis)) stop("Run clinical_data_and_analysis_set.R first.")
@@ -84,7 +67,7 @@ ids <- as.character(clin$sample_id[analysis])
 cl  <- clin[analysis, ]
 n   <- length(ids)
 
-## 3. Feature table ---------------------------------------------
+#Feature table
 df <- data.frame(
   CD8_T_cells = cons$CD8_T_cells, B_cells = cons$B_cells, Macrophages = cons$Macrophages,
   CAFs = cons$CAFs, Endothelial = cons$Endothelial,
@@ -113,7 +96,6 @@ tier <- setNames(ifelse(names(df) %in% consensus_cols, "Consensus",
 df_int <- as.data.frame(lapply(df, int), check.names = FALSE)
 rownames(df_int) <- ids
 
-## STEP 24: DISTRIBUTIONS ======================================
 dist_summary <- do.call(rbind, lapply(names(df), function(f) {
   v <- df[[f]]
   data.frame(feature = f, tier = tier[[f]], n = length(v),
@@ -138,7 +120,7 @@ p24a <- ggplot(long, aes(feature, value, fill = tier)) +
   theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
 ggsave(file.path(out_dir, "feature_distribution_violin_plot.png"), p24a, width = 11, height = 5, dpi = 200)
 
-# Interpretable fractions (quanTIseq and EPIC estimate % of all cells)
+#Interpretable fractions (quanTIseq and EPIC estimate % of all cells)
 frac_tier <- function(method, cell) {
   c0 <- tolower(cell)
   if (grepl("uncharacterized", c0)) return("Residual (non-immune/tumour)")
@@ -172,7 +154,7 @@ p24b <- ggplot(subset(frac_long, !grepl("Residual", tier)),
   theme_bw()
 ggsave(file.path(out_dir, "cell_fractions_quanTIseq_EPIC_boxplot.png"), p24b, width = 11, height = 5, dpi = 200)
 
-## STEP 25: CORRELATIONS =======================================
+##Correlations
 cm <- cor(df, method = "spearman")
 write.csv(round(cm, 3), file.path(out_dir, "feature_spearman_correlation_matrix.csv"))
 pheatmap::pheatmap(
@@ -182,7 +164,7 @@ pheatmap::pheatmap(
   main = "Spearman correlation between immune/stromal features",
   filename = file.path(out_dir, "feature_spearman_correlation_heatmap.png"), width = 9, height = 8)
 
-## STEP 26: CLUSTERING =========================================
+#Clusturing
 X <- scale(as.matrix(df[, cluster_features]))
 D <- dist(X)
 
@@ -224,13 +206,13 @@ dev.off()
 
 raw_cl <- run_km(X, k_best, nstart = 100)
 
-# Order clusters from most to least immune-rich
+#Order clusters from most to least immune-rich
 imm_by_cl <- tapply(rowMeans(X[, immune_features, drop = FALSE]), raw_cl, mean)
 cl_order  <- order(imm_by_cl, decreasing = TRUE)
 cluster   <- factor(paste0("C", match(raw_cl, as.integer(names(imm_by_cl))[cl_order])),
                     levels = paste0("C", seq_len(k_best)))
 
-## STEP 27: PHENOTYPES =========================================
+#Phenotypes
 profile <- t(sapply(levels(cluster), function(c) colMeans(X[cluster == c, , drop = FALSE])))
 lvl <- function(z) ifelse(z > 0.5, "high", ifelse(z < -0.5, "low", "intermediate"))
 imm_z <- rowMeans(profile[, intersect(immune_features, colnames(profile)), drop = FALSE])
@@ -329,10 +311,8 @@ p27b <- ggplot(pam_long, aes(pam50, value, fill = pam50)) +
   theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "none")
 ggsave(file.path(out_dir, "consensus_features_by_PAM50_boxplot.png"), p27b, width = 13, height = 4.5, dpi = 200)
 
-## STEP 28: IMMUNE-HIGH/LOW (DATA-DRIVEN) ======================
+#Immune high/low
 # Mean of standardised CD8, B-cell and macrophage scores.
-# Not rank-normal transformed: forcing a normal shape would hide any natural groups
-# and the mixture model below would then almost always find just one.
 immune_score <- rowMeans(scale(as.matrix(df[, immune_features])))
 
 mc <- Mclust(immune_score, G = 1:3, modelNames = "V", verbose = FALSE)
@@ -367,7 +347,7 @@ p28 <- ggplot(data.frame(s = immune_score, g = immune_group), aes(s, fill = g)) 
        fill = NULL, title = "Data-driven immune groups") + theme_bw()
 ggsave(file.path(out_dir, "immune_group_histogram.png"), p28, width = 8, height = 4.5, dpi = 200)
 
-## STEP 29: LANDSCAPE HEATMAP + SAMPLE RESULTS =================
+#Landscape heatmap + Sample result
 o <- order(cluster, -immune_score)
 hm <- t(as.matrix(df_int[o, ]))
 hm[hm > 2.5] <- 2.5; hm[hm < -2.5] <- -2.5
@@ -405,30 +385,28 @@ write.csv(results, file.path(out_dir, "sample_level_results.csv"), row.names = F
 saveRDS(results, file.path(out_dir, "sample_level_results.rds"))
 writeLines(capture.output(sessionInfo()), file.path(out_dir, "R_session_info.txt"))
 
-## REPORT =======================================================
-cat("\n================ PHASE 4: IMMUNE LANDSCAPE ================\n")
 cat("\nAnalysis set:\n"); print(exclusions, row.names = FALSE)
 
-cat("\nStep 24 — consensus feature distributions saved; cell fractions (median %):\n")
+cat("\nconsensus feature distributions saved; cell fractions (median %):\n")
 print(subset(frac_summary, !grepl("Residual", tier))[, c("method", "cell", "tier", "median_pct")],
       row.names = FALSE)
 
-cat("\nStep 25 — correlations among consensus features (Spearman):\n")
+cat("\ncorrelations among consensus features (Spearman):\n")
 print(round(cm[cluster_features, cluster_features], 2))
 
-cat("\nStep 26 — choosing the number of clusters:\n"); print(k_sel, row.names = FALSE)
+cat("\nchoosing the number of clusters:\n"); print(k_sel, row.names = FALSE)
 cat("Chosen k:", k_best, if (!is.na(k_override)) "(manual override)" else "", "\n")
 
-cat("\nStep 27 — cluster profiles (mean standardised score):\n")
+cat("\ncluster profiles (mean standardised score):\n")
 print(prof_out, row.names = FALSE)
 cat("\nPAM50 composition by cluster (% of cluster):\n")
 print(assoc$PAM50$table[, c(1, grep("\\(%\\)", names(assoc$PAM50$table)))], row.names = FALSE)
 cat("\nClinical association tests:\n"); print(assoc_p, row.names = FALSE)
 cat("\nConsensus features by PAM50 (median):\n"); print(by_pam, row.names = FALSE)
 
-cat("\nStep 28 —", grp_method, "\n"); print(grp_summary, row.names = FALSE)
+cat("\n grp_method, "\n"); print(grp_summary, row.names = FALSE)
 cat("\nPAM50 by immune group (% of group):\n")
 print(grp_assoc$PAM50$table[, c(1, grep("\\(%\\)", names(grp_assoc$PAM50$table)))], row.names = FALSE)
 
-cat("\nStep 29 — figures and per-sample results saved to:\n", out_dir, "\n")
+cat("\n figures and per-sample results saved to:\n", out_dir, "\n")
 cat("\nFiles created:\n"); print(sort(list.files(out_dir)))
