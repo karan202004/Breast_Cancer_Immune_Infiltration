@@ -1,20 +1,5 @@
-# ============================================================
-# SURVIVAL OUTCOME DATA CHECK  (steps 44–45, before any modelling)
-# TCGA-BRCA | 1,069 tumours in the analysis set
-#
-# Run order:  1. clinical_data_and_analysis_set.R
-#             2. phase4_immune_landscape.R
-#             3. clinical_master_table_qc.R
-#             4. clinical_immune_integration.R
-#             5. tme_characterization.R
-#             6. survival_outcome_data_check.R   (this script)
-#
-# Endpoints from the TCGA Pan-Cancer Clinical Data Resource (Liu et al. Cell 2018;173:400-416):
-#   OS, DSS, DFI, PFI (status 1 = event, 0 = censored; times in days).
-#   For BRCA, Liu et al. recommend PFI and DFI and advise caution with OS and DSS.
-# Median follow-up: reverse Kaplan-Meier (Schemper & Smith, Control Clin Trials 1996;17:343-346).
-# Events per variable guide: ~10 events per model term (Peduzzi et al. J Clin Epidemiol 1996;49:1373-1379).
-# ============================================================
+# Survival outcome data check
+
 
 suppressPackageStartupMessages(library(survival))
 
@@ -30,7 +15,7 @@ a$cluster_name <- factor(sub("^C[0-9]+: ", "", a$cluster_label), levels = sub("^
 endpoints <- c(OS = "Overall survival", PFI = "Progression-free interval",
                DFI = "Disease-free interval", DSS = "Disease-specific survival")
 
-## 1. Completeness, events and follow-up per endpoint -------------
+
 ep_summary <- do.call(rbind, lapply(names(endpoints), function(e) {
   st <- a[[e]]; tm <- a[[paste0(e, ".time")]]
   ok <- !is.na(st) & !is.na(tm)
@@ -51,7 +36,7 @@ ep_summary <- do.call(rbind, lapply(names(endpoints), function(e) {
 }))
 write.csv(ep_summary, file.path(out_dir, "survival_endpoint_completeness.csv"), row.names = FALSE)
 
-## 2. Events by group (are there enough events in each group?) ----
+#Events by group (are there enough events in each group?)
 event_tab <- function(group, gname) {
   do.call(rbind, lapply(names(endpoints), function(e) {
     st <- a[[e]]; tm <- a[[paste0(e, ".time")]]
@@ -69,7 +54,7 @@ by_group <- rbind(event_tab(a$cluster_name, "Immune cluster"),
                                    as.character(a$cluster_name), NA), "Basal-like hot vs cold"))
 write.csv(by_group, file.path(out_dir, "survival_events_by_group.csv"), row.names = FALSE)
 
-## 3. Candidate covariates: completeness among tumours with PFI ----
+#Candidate covariates: completeness among tumours with PFI
 pfi_ok <- !is.na(a$PFI) & !is.na(a$PFI.time) & a$PFI.time > 0
 covars <- c(age = "Age", stage = "Stage", pT = "T stage", pN = "N stage", pam50 = "PAM50",
             receptor_subtype = "Receptor subtype", histology_group = "Histology",
@@ -84,9 +69,7 @@ cov_tab <- data.frame(
 cc <- complete.cases(a[pfi_ok, c("age", "stage", "pam50")])
 write.csv(cov_tab, file.path(out_dir, "survival_covariate_completeness.csv"), row.names = FALSE)
 
-## 4. Report -------------------------------------------------------
 op <- options(width = 200)
-cat("\n================ SURVIVAL OUTCOME DATA CHECK ================\n")
 cat("Tumours in analysis set:", nrow(a), "\n\n")
 print(ep_summary, row.names = FALSE)
 cat("\nEvents by group:\n")
