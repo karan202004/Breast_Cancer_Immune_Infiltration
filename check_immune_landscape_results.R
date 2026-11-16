@@ -1,21 +1,21 @@
 project_dir <- "C:/Users/karan/OneDrive/Documents/Breast_Cancer_Immune_Infiltration"
 out_dir <- file.path(project_dir, "results", "immune_landscape")
 
-# 1. Histology by cluster
+# 1.Histology by cluster
 hist_tab <- read.csv(file.path(out_dir, "cluster_vs_Histology.csv"), check.names = FALSE)
 cat("===== Histology by cluster =====\n")
 print(hist_tab, row.names = FALSE)
 
-# 2. Stage by cluster
+# 2.Stage by cluster
 stage_tab <- read.csv(file.path(out_dir, "cluster_vs_Stage.csv"), check.names = FALSE)
 cat("\n===== Stage by cluster =====\n")
 print(stage_tab, row.names = FALSE)
 
-# 3. Test p-values for reference
+# 3.Test p-values for reference
 cat("\n===== Association tests =====\n")
 print(read.csv(file.path(out_dir, "cluster_clinical_association_tests.csv")), row.names = FALSE)
 
-# 4. Immune score: one hump or two?
+# 4.Immune score: one hump or two?
 res <- readRDS(file.path(out_dir, "sample_level_results.rds"))
 s <- res$immune_score
 
