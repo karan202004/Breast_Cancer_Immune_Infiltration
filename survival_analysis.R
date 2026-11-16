@@ -1,48 +1,5 @@
-# ============================================================
-# SURVIVAL ANALYSIS  (steps 44–50)
-# TCGA-BRCA | 1,069 tumours in the analysis set
-#
-# Run order:  1. clinical_data_and_analysis_set.R
-#             2. phase4_immune_landscape.R
-#             3. clinical_master_table_qc.R
-#             4. clinical_immune_integration.R
-#             5. tme_characterization.R
-#             6. survival_outcome_data_check.R
-#             7. survival_analysis.R               (this script)
-#
-# Design decisions (fixed from survival_outcome_data_check.R output):
-#   Endpoints   PFI primary, OS secondary, DFI and DSS supporting. TCGA-CDR,
-#               Liu et al. Cell 2018;173:400-416 (PFI/DFI recommended for BRCA;
-#               OS/DSS "use with caution" because follow-up is short).
-#               13 tumours with time <= 0 are excluded from every endpoint.
-#               Median follow-up is ~2.6 years (reverse Kaplan-Meier), so curves are
-#               drawn to 10 years and a 10-year administrative censoring sensitivity is run.
-#   Exposures   Main: continuous immune score, hazard ratio per 1 SD.
-#               Also: stromal score, the five consensus features, the three immune clusters
-#               (reference = Depleted). Immune-high/low groups are shown with Kaplan-Meier only.
-#   Covariates  Age (per 10 years), AJCC stage (I-IV), PAM50.
-#               Complete in 1,031 of 1,055 tumours with PFI. 8 covariate terms + 1-2 exposure
-#               terms <= 14 allowed for PFI/OS at ~10 events per term (Peduzzi et al.
-#               J Clin Epidemiol 1996;49:1373-1379). DFI and DSS have ~8-9 events per term;
-#               5-9 is usually acceptable for adjustment (Vittinghoff & McCulloch,
-#               Am J Epidemiol 2007;165:710-718), so they are reported as supporting only.
-#               Not used as main covariates:
-#                 pT / pN       - components of stage (would double-count it)
-#                 receptor subtype - 13% missing, overlaps PAM50 (sensitivity only)
-#                 menopause     - 10% missing, nearly collinear with age
-#                 histology     - added in a sensitivity model
-#                 tumour purity - lowered by immune and stromal cells themselves, so adjusting
-#                                 for it removes the exposure being studied (over-adjustment)
-#   Methods     Kaplan-Meier with log-rank test; Cox proportional hazards (Cox 1972);
-#               proportional hazards checked with scaled Schoenfeld residuals
-#               (Grambsch & Therneau, Biometrika 1994;81:515-526) via cox.zph;
-#               linearity of the immune score checked with a natural cubic spline, 3 df
-#               (Harrell, Regression Modeling Strategies, 2nd ed. 2015);
-#               Benjamini-Hochberg FDR across the 7 continuous immune/stromal features.
-#               Subtype-specific effects are tested because immune infiltration is prognostic
-#               mainly in triple-negative and HER2-positive disease (Denkert et al.
-#               Lancet Oncol 2018;19:40-50).
-# ============================================================
+#Survival analysis 
+
 
 suppressPackageStartupMessages({
   library(survival)
@@ -54,7 +11,7 @@ meta_dir <- file.path(project_dir, "metadata")
 out_dir  <- file.path(project_dir, "results", "survival_analysis")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-## 1. DATA =======================================================
+
 m    <- readRDS(file.path(meta_dir, "clinical_master_table.rds"))
 land <- readRDS(file.path(project_dir, "results", "immune_landscape", "sample_level_results.rds"))
 a <- m[m$in_analysis_set, ]
@@ -117,7 +74,7 @@ ep_data <- function(e, d = a, censor_at = NULL) {
 covars_main <- c("age10", "stage", "pam50")
 cc_data <- function(d, vars) droplevels(d[complete.cases(d[, vars, drop = FALSE]), ])
 
-## 2. HELPERS ====================================================
+# Helpers
 cox_fit <- function(rhs, d) coxph(as.formula(paste("Surv(time, status) ~", rhs)), data = d, ties = "efron")
 
 # Hazard-ratio rows for terms whose name starts with `var`
@@ -144,7 +101,7 @@ r3 <- function(df) {
   df
 }
 
-## 3. KAPLAN-MEIER (step 46) =====================================
+#Kaplan-Meier 
 km_groups <- list(
   list(var = "cluster_name",   title = "Immune cluster",         file = "km_by_immune_cluster.png",
        cols = setNames(hcl.colors(3, "Dark 3"), levels(a$cluster_name))),
@@ -194,7 +151,7 @@ for (g in km_groups) {
 km_tab <- do.call(rbind, km_rows)
 write.csv(km_tab, file.path(out_dir, "km_event_free_estimates.csv"), row.names = FALSE)
 
-## 4. UNIVARIATE COX (steps 47-48) ===============================
+#Univariate COX
 uni_vars <- c(setNames(paste0(names(cont_exposures), "_sd"), paste(cont_exposures, "(per SD)")),
               "Immune cluster (ref Depleted)" = "cluster_ref",
               "Immune group (ref Immune-low)" = "immune_group",
@@ -224,7 +181,7 @@ for (e in names(endpoints)) {
 uni_tab$HR_95CI <- fmt_hr(uni_tab$HR, uni_tab$CI_lower, uni_tab$CI_upper)
 write.csv(r3(uni_tab), file.path(out_dir, "univariate_cox_results.csv"), row.names = FALSE)
 
-## 5. MULTIVARIABLE COX (steps 49-50) ============================
+#Mutivariable COX
 mv_exposures <- c(setNames(paste0(names(cont_exposures), "_sd"), paste(cont_exposures, "(per SD)")),
                   "Immune cluster (ref Depleted)" = "cluster_ref")
 mv_rows <- list(); full_rows <- list(); ph_rows <- list(); main_fits <- list()
@@ -266,7 +223,7 @@ full_tab <- do.call(rbind, full_rows)
 full_tab$HR_95CI <- fmt_hr(full_tab$HR, full_tab$CI_lower, full_tab$CI_upper)
 write.csv(r3(full_tab), file.path(out_dir, "multivariable_cox_full_models.csv"), row.names = FALSE)
 
-## 6. PROPORTIONAL HAZARDS AND LINEARITY =========================
+#Proportional hazards and linearity
 ph_tab <- do.call(rbind, ph_rows)
 ph_tab$flag <- ifelse(ph_tab$p < 0.05, "PH possibly violated", "")
 write.csv(r3(ph_tab), file.path(out_dir, "proportional_hazards_checks.csv"), row.names = FALSE)
@@ -310,7 +267,7 @@ for (e in c("PFI", "OS")) {
 lin_tab <- do.call(rbind, lin_rows)
 write.csv(r3(lin_tab), file.path(out_dir, "immune_score_linearity_check.csv"), row.names = FALSE)
 
-## 7. SENSITIVITY ANALYSES (PFI and OS) ==========================
+#Sensitivity Analysis (PFI and OS)
 sens_specs <- list(
   "Main model"                          = list(adj = "age10 + stage + pam50", sub = NULL, censor = NULL),
   "Plus histology"                      = list(adj = "age10 + stage + pam50 + histology_group", sub = NULL, censor = NULL),
@@ -345,7 +302,7 @@ sens_tab$level[sens_tab$level == ""] <- "per SD"
 sens_tab$HR_95CI <- fmt_hr(sens_tab$HR, sens_tab$CI_lower, sens_tab$CI_upper)
 write.csv(r3(sens_tab), file.path(out_dir, "sensitivity_cox_results.csv"), row.names = FALSE)
 
-## 8. EFFECT BY SUBTYPE AND BASAL-LIKE HOT vs COLD ================
+#Effect by subtype and Basel-like Hot vs Cold
 # Subgroup models use stage I-II vs III-IV to keep events per term acceptable.
 sub_rows <- list(); int_rows <- list()
 for (e in names(endpoints)) {
@@ -384,7 +341,7 @@ bas_tab <- do.call(rbind, bas_rows)
 bas_tab$HR_95CI <- fmt_hr(bas_tab$HR, bas_tab$CI_lower, bas_tab$CI_upper)
 write.csv(r3(bas_tab), file.path(out_dir, "basal_like_hot_vs_cold_cox.csv"), row.names = FALSE)
 
-## 9. FOREST PLOTS ===============================================
+#Forest plot
 forest <- function(df, labels, file, main, cols, xlab = "Adjusted hazard ratio (95% CI, log scale)") {
   eps <- unique(df$endpoint); nl <- length(labels)
   png(file.path(out_dir, file), width = 9, height = 1.2 + 0.45 * nl * length(eps) / 1.6, units = "in", res = 300)
@@ -418,28 +375,26 @@ forest(fs, labels = levels(a$subtype3), file = "immune_score_by_subtype_forest_p
 
 writeLines(capture.output(sessionInfo()), file.path(out_dir, "R_session_info_survival.txt"))
 
-## 10. REPORT ====================================================
 op <- options(width = 200)
 show <- function(df, cols) print(df[, cols], row.names = FALSE)
-cat("\n==================== SURVIVAL ANALYSIS ====================\n")
-cat("\n--- Kaplan-Meier: 5-year event-free % and log-rank p ---\n")
+cat("\n Kaplan-Meier: 5-year event-free % and log-rank p \n")
 show(km_tab, c("grouping", "endpoint", "group", "n", "events", "event_free_5y_pct", "CI_lower_pct", "CI_upper_pct", "logrank_p"))
-cat("\n--- Univariate Cox: immune features and clusters ---\n")
+cat("\n Univariate Cox: immune features and clusters \n")
 u <- uni_tab[uni_tab$variable %in% c(paste(cont_exposures, "(per SD)"), "Immune cluster (ref Depleted)", "Immune group (ref Immune-low)"), ]
 show(r3(u), c("endpoint", "variable", "level", "HR_95CI", "p", "FDR_immune_features", "n", "events"))
-cat("\n--- Univariate Cox: clinical covariates (PFI and OS) ---\n")
+cat("\nUnivariate Cox: clinical covariates (PFI and OS) \n")
 u <- uni_tab[!feat_rows & !grepl("Immune", uni_tab$variable) & uni_tab$endpoint %in% c("PFI", "OS"), ]
 show(r3(u), c("endpoint", "variable", "level", "HR_95CI", "p", "variable_LRT_p", "n", "events"))
-cat("\n--- Multivariable Cox (age, stage, PAM50) ---\n")
+cat("\n Multivariable Cox (age, stage, PAM50) \n")
 show(r3(mv_tab), c("endpoint", "exposure", "level", "HR_95CI", "p", "FDR_immune_features", "exposure_LRT_p", "n", "events", "events_per_term"))
-cat("\n--- Full main models (PFI and OS) ---\n")
+cat("\n Full main models (PFI and OS) \n")
 show(r3(full_tab[full_tab$endpoint %in% c("PFI", "OS"), ]), c("endpoint", "model", "term", "HR_95CI", "p"))
-cat("\n--- Proportional hazards (cox.zph) ---\n")
+cat("\n Proportional hazards (cox.zph) \n")
 show(r3(ph_tab), c("endpoint", "model", "term", "chisq", "df", "p", "flag"))
-cat("\n--- Linearity of immune score ---\n"); print(r3(lin_tab), row.names = FALSE)
-cat("\n--- Sensitivity analyses ---\n")
+cat("\n Linearity of immune score \n"); print(r3(lin_tab), row.names = FALSE)
+cat("\n Sensitivity analyses \n")
 show(r3(sens_tab), c("endpoint", "analysis", "exposure", "level", "HR_95CI", "p", "n", "events"))
-cat("\n--- Immune score by subtype ---\n")
+cat("\n Immune score by subtype \n")
 show(r3(sub_tab), c("endpoint", "subtype", "HR_95CI", "p", "n", "events", "interaction_LRT_p"))
 cat("\n--- Basal-like hot vs cold ---\n")
 show(r3(bas_tab), c("endpoint", "model", "HR_95CI", "p", "n", "events"))
